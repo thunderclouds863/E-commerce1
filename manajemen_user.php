@@ -22,7 +22,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $user_id = $_POST['user_id'];
     $action = $_POST['action'];
 
-    // Ensure that the action is valid to prevent potential issues
     $valid_actions = ['approve_user', 'reject_user', 'delete_user'];
     if (in_array($action, $valid_actions)) {
       switch ($action) {
@@ -49,19 +48,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
           $stmt->execute();
           break;
       }
-    } else {
-      // Invalid action
-      echo "Invalid action.";
+      header("Location: manajemen_user.php");
+      exit();
     }
   }
 }
 
-// Fetch users with different statuses and roles
 $pending_users = $conn->query("SELECT * FROM users WHERE status = 'pending'");
 $customers = $conn->query("SELECT * FROM users WHERE role = 'customer' AND status = 'actived'");
 $employees = $conn->query("SELECT * FROM users WHERE role = 'employee' AND status = 'actived'");
 $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status = 'actived'");
-
 ?>
 
 <!DOCTYPE html>
@@ -70,272 +66,210 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Admin Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
-  <style>
-    body {
-      font-family: 'Poppins', sans-serif;
-      background-color: #fef5e7;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      min-height: 100vh;
-      /* Ensures the body takes up full height */
-    }
-
-    .container {
-      padding: 20px;
-      flex: 1;
-      /* Ensures container takes up available space */
-    }
-
-    h1,
-    h2 {
-      text-align: center;
-      color: #ff8a65;
-    }
-
-    button {
-      background-color: #4caf50;
-      color: white;
-      padding: 8px 12px;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      transition: background-color 0.3s ease;
-    }
-
-    button:hover {
-      background-color: #388e3c;
-    }
-
-    nav {
-      background-color: #ff7043;
-      color: white;
-      padding: 15px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-    }
-
-    nav ul {
-      display: flex;
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-
-    nav ul li {
-      margin: 0 15px;
-    }
-
-    nav ul li a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      padding: 5px 10px;
-      border-radius: 5px;
-      transition: background-color 0.3s ease;
-    }
-
-    nav div a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      padding: 5px 10px;
-      border-radius: 5px;
-      transition: background-color 0.3s ease;
-    }
-
-    nav ul li a:hover {
-      background-color: #ff8a65;
-    }
-
-    nav div a:hover {
-      background-color: #ff8a65;
-    }
-
-    section {
-      display: none;
-      padding: 20px;
-      background-color: #fff5e5;
-      border-radius: 10px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      margin-bottom: 20px;
-      border: 1px solid red;
-    }
-
-    .content {
-      flex-grow: 1;
-      /* Allow content to grow and take remaining space */
-      margin-top: 30px;
-      padding: 20px;
-      background-color: #fff;
-      border-radius: 10px;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-      box-sizing: border-box;
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 20px 0;
-    }
-
-    table th,
-    table td {
-      padding: 12px;
-      border: 1px solid #ffccbc;
-      text-align: center;
-    }
-
-    table th {
-      background-color: #ffe0b2;
-      color: #d84315;
-    }
-
-    footer {
-      background-color: #ff7043;
-      color: white;
-      text-align: center;
-      padding: 15px;
-      position: relative;
-      /* Changed to relative to avoid sticky issues */
-      margin-top: auto;
-      /* Ensures footer stays at the bottom */
-      width: 98.2%;
-    }
-    nav ul li a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      padding: 5px 10px;
-      border-radius: 5px;
-      transition: background-color 0.3s ease;
-    }
-
-    nav div a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      padding: 5px 10px;
-      border-radius: 5px;
-      transition: background-color 0.3s ease;
-    }
-
-    nav ul li a:hover {
-      background-color: #ff8a65;
-    }
-
-    nav div a:hover {
-      background-color: #ff8a65;
-    }F
-  </style>
+  <title>User Management — AS Berkah E-Commerce</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 
 <body>
-  <nav>
-    <div><a href="admin_dashboard.php">Admin Dashboard</a></div>
-    <ul>
-      <li><a href="admin_dashboard.php">Home</a></li>
-      <li><a href="manajemen_user.php">User Management</a></li>
-      <li><a href="inventory_management.php">Inventory</a></li>
-      <li><a href="order_management.php">Orders</a></li>
-      <li><a href="report.php">Report</a></li>
-      <li><a href="logout.php">Logout</a></li>
-    </ul>
-  </nav>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="admin_dashboard.php" class="brand-link">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <path d="M16 10a4 4 0 0 1-8 0"></path>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-name">AS Berkah</span>
+          <span class="brand-sub">Admin Console</span>
+        </span>
+      </a>
 
-  <main>
-    <div class="content">
-      <h2>User Management</h2>
+      <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
 
-      <!-- Pending Users -->
-      <h3>Pending Users</h3>
-      <table>
-        <tr>
-          <th>ID</th>
-          <th>Username</th>
-          <th>Role</th>
-          <th>Action</th>
-        </tr>
-        <?php while ($user = $pending_users->fetch_assoc()): ?>
-          <tr>
-            <td><?= $user['id'] ?></td>
-            <td><?= $user['username'] ?></td>
-            <td><?= $user['role'] ?></td>
-            <td>
-              <form method="POST" style="display:inline;">
-                <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
-                <button type="submit" name="action" value="approve_user">Approve</button>
-              </form>
-              <form method="POST" style="display:inline;">
-                <input type="hidden" name="user_id" value="<?= $user['id'] ?>">
-                <button type="submit" name="action" value="reject_user">Reject</button>
-              </form>
-            </td>
-          </tr>
-        <?php endwhile; ?>
-      </table>
+      <nav class="nav-links" data-nav-links aria-label="Admin navigation">
+        <a href="admin_dashboard.php">Overview</a>
+        <a href="manajemen_user.php" class="active">Users</a>
+        <a href="inventory_management.php">Inventory</a>
+        <a href="order-management.php">Orders</a>
+        <a href="report.php">Reports</a>
+        <a href="logout.php" class="nav-logout">Logout</a>
+      </nav>
+    </div>
+  </header>
 
-      <!-- Actived Users: Customers, Employees, Couriers -->
-      <h3>Actived Users</h3>
+  <main class="page-main">
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Directory</div>
+        <h1 class="page-title">User Management</h1>
+        <p class="page-subtitle">Review pending account registrations and browse active accounts by role.</p>
+      </div>
+    </div>
 
-      <h4>Customers</h4>
-      <table>
-        <tr>
-          <th>ID</th>
-          <th>Username</th>
-        </tr>
-        <?php while ($customer = $customers->fetch_assoc()): ?>
-          <tr>
-            <td><?= $customer['id'] ?></td>
-            <td><?= $customer['username'] ?></td>
-          </tr>
-        <?php endwhile; ?>
-      </table>
+    <div class="stack-lg">
+      <!-- Pending Approvals -->
+      <section class="surface-card">
+        <div class="surface-card-header">
+          <h2 class="surface-card-title">Pending Users</h2>
+          <span class="badge-pill badge-warning"><?php echo $pending_users->num_rows; ?> pending</span>
+        </div>
 
-      <h4>Employees</h4>
-      <table>
-        <tr>
-          <th>ID</th>
-          <th>Username</th>
-        </tr>
-        <?php while ($employee = $employees->fetch_assoc()): ?>
-          <tr>
-            <td><?= $employee['id'] ?></td>
-            <td><?= $employee['username'] ?></td>
-          </tr>
-        <?php endwhile; ?>
-      </table>
+        <?php if ($pending_users->num_rows > 0): ?>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th class="text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php while ($user = $pending_users->fetch_assoc()): ?>
+                  <tr>
+                    <td class="tabular-nums">#<?php echo intval($user['id']); ?></td>
+                    <td><strong><?php echo htmlspecialchars($user['username']); ?></strong></td>
+                    <td><span class="badge-pill badge-neutral"><?php echo htmlspecialchars(ucfirst($user['role'])); ?></span></td>
+                    <td class="text-right">
+                      <div class="action-group" style="justify-content:flex-end;">
+                        <form method="POST" style="margin:0;">
+                          <input type="hidden" name="user_id" value="<?php echo intval($user['id']); ?>">
+                          <button type="submit" name="action" value="approve_user" class="btn btn-success btn-sm">Approve</button>
+                        </form>
+                        <form method="POST" style="margin:0;">
+                          <input type="hidden" name="user_id" value="<?php echo intval($user['id']); ?>">
+                          <button type="submit" name="action" value="reject_user" class="btn btn-danger btn-sm">Reject</button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                <?php endwhile; ?>
+              </tbody>
+            </table>
+          </div>
+        <?php else: ?>
+          <div class="empty-state">
+            <h3>No pending approvals</h3>
+            <p>All registered users have been reviewed.</p>
+          </div>
+        <?php endif; ?>
+      </section>
 
-      <h4>Couriers</h4>
-      <table>
-        <tr>
-          <th>ID</th>
-          <th>Username</th>
-        </tr>
-        <?php while ($courier = $couriers->fetch_assoc()): ?>
-          <tr>
-            <td><?= $courier['id'] ?></td>
-            <td><?= $courier['username'] ?></td>
-          </tr>
-        <?php endwhile; ?>
-      </table>
+      <!-- Active Users by Role -->
+      <div class="users-grid">
+        <section class="surface-card">
+          <div class="surface-card-header">
+            <h2 class="surface-card-title">Customers</h2>
+            <span class="badge-pill badge-success"><?php echo $customers->num_rows; ?></span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Username</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if ($customers->num_rows > 0): ?>
+                  <?php while ($customer = $customers->fetch_assoc()): ?>
+                    <tr>
+                      <td class="tabular-nums">#<?php echo intval($customer['id']); ?></td>
+                      <td><strong><?php echo htmlspecialchars($customer['username']); ?></strong></td>
+                    </tr>
+                  <?php endwhile; ?>
+                <?php else: ?>
+                  <tr><td colspan="2" style="color:var(--ink-muted);">No active customers.</td></tr>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-header">
+            <h2 class="surface-card-title">Employees</h2>
+            <span class="badge-pill badge-info"><?php echo $employees->num_rows; ?></span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Username</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if ($employees->num_rows > 0): ?>
+                  <?php while ($employee = $employees->fetch_assoc()): ?>
+                    <tr>
+                      <td class="tabular-nums">#<?php echo intval($employee['id']); ?></td>
+                      <td><strong><?php echo htmlspecialchars($employee['username']); ?></strong></td>
+                    </tr>
+                  <?php endwhile; ?>
+                <?php else: ?>
+                  <tr><td colspan="2" style="color:var(--ink-muted);">No active employees.</td></tr>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="surface-card">
+          <div class="surface-card-header">
+            <h2 class="surface-card-title">Couriers</h2>
+            <span class="badge-pill badge-neutral"><?php echo $couriers->num_rows; ?></span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Username</th>
+                </tr>
+              </thead>
+              <tbody>
+                <?php if ($couriers->num_rows > 0): ?>
+                  <?php while ($courier = $couriers->fetch_assoc()): ?>
+                    <tr>
+                      <td class="tabular-nums">#<?php echo intval($courier['id']); ?></td>
+                      <td><strong><?php echo htmlspecialchars($courier['username']); ?></strong></td>
+                    </tr>
+                  <?php endwhile; ?>
+                <?php else: ?>
+                  <tr><td colspan="2" style="color:var(--ink-muted);">No active couriers.</td></tr>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   </main>
 
-  <footer>
-    <p>&copy; 2024 Burjo Restaurant. All Rights Reserved.</p>
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>&copy; 2024 AS Berkah E-Commerce. All rights reserved.</span>
+      <span>Admin Console</span>
+    </div>
   </footer>
 
-  <script>
-
-  </script>
+  <script src="assets/js/ui.js"></script>
 </body>
 
 </html>
+
+<?php $conn->close(); ?>

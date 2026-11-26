@@ -17,21 +17,37 @@ if ($conn->connect_error) {
 
 $user_id = $_SESSION['user_id'];
 
-$sql = "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$orders_result = $stmt->get_result();
-
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['mark_completed'])) {
     $order_id = $_POST['order_id'];
-    // Mark the order as 'Selesai'
     $update_query = "UPDATE orders SET status = 'Selesai' WHERE id = ?";
     $update_stmt = $conn->prepare($update_query);
     $update_stmt->bind_param("i", $order_id);
     $update_stmt->execute();
     header("Location: order-history.php");
     exit;
+}
+
+$sql = "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$orders_result = $stmt->get_result();
+
+function getStatusBadgeClass($status) {
+    $s = strtolower(trim($status));
+    if ($s === 'selesai' || $s === 'paid') return 'badge-success';
+    if ($s === 'pending' || $s === 'awaiting payment' || $s === 'dikemas') return 'badge-warning';
+    if ($s === 'dikonfirmasi' || $s === 'siap dikirim' || $s === 'dikirim' || $s === 'sampai tujuan') return 'badge-info';
+    return 'badge-neutral';
+}
+
+$cart_count = 0;
+if (!empty($_SESSION['cart'])) {
+    foreach ($_SESSION['cart'] as $cItem) {
+        if (is_array($cItem) && isset($cItem['quantity'])) {
+            $cart_count += intval($cItem['quantity']);
+        }
+    }
 }
 ?>
 
@@ -41,218 +57,120 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['mark_completed'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Order History - AS Berkah E-Commerce</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #f9f5f2;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-            /* Full viewport height */
-        }
-
-        header {
-            width: 100%;
-            background-color: #ff8a65;
-            padding: 10px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: white;
-            font-size: 18px;
-            box-sizing: border-box;
-        }
-
-        .navbar {
-            text-align: right;
-            display: flex;
-            /* Make navbar a flex container */
-        }
-
-        .navbar a {
-            color: white;
-            text-decoration: none;
-            margin: 0 10px;
-            border-radius: 5px;
-            padding: 8px 12px;
-        }
-
-        .navbar a:hover {
-            background-color: #ff5722;
-        }
-
-
-        .title a {
-            color: white;
-            text-decoration: none;
-            margin: 0 10px;
-            border-radius: 5px;
-            padding: 8px 12px;
-        }
-
-        .title a:hover {
-            background-color: #ff5722;
-        }
-
-        s .navbar {
-            background-color: #ff7043;
-            padding: 10px;
-            text-align: center;
-        }
-
-        .navbar a {
-            color: white;
-            padding: 12px 20px;
-            text-decoration: none;
-            margin: 0 15px;
-            border-radius: 8px;
-        }
-
-        .navbar a:hover {
-            background-color: #ff5722;
-        }
-
-        .container {
-            width: 90%;
-            max-width: 1200px;
-            margin: 20px auto;
-            flex: 1;
-            /* This ensures the container expands to take up available space */
-        }
-
-        .content {
-            background-color: #ffffff;
-            padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-        .order-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .order-table th,
-        .order-table td {
-            padding: 15px;
-            text-align: left;
-            border-bottom: 1px solid #ddd;
-        }
-
-        .order-table th {
-            background-color: #f2f2f2;
-        }
-
-        .order-table td .status {
-            font-weight: bold;
-        }
-
-        footer {
-            background-color: #ff8a65;
-            padding: 15px;
-            text-align: center;
-            color: white;
-            font-size: 14px;
-            margin-top: auto;
-            /* Ensures the footer stays at the bottom */
-        }
-
-        .view-details-btn {
-            background-color: #ff9f1c;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 5px;
-            text-decoration: none;
-            text-align: center;
-        }
-
-        .view-details-btn:hover {
-            background-color: #ff7043;
-        }
-
-        .view-details-btn {
-            background-color: #ff9f1c;
-            color: white;
-            padding: 8px 15px;
-            border-radius: 5px;
-            text-decoration: none;
-            text-align: center;
-        }
-
-        .view-details-btn:hover {
-            background-color: #ff7043;
-        }
-    </style>
+    <title>Order History — AS Berkah E-Commerce</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css">
 </head>
 
 <body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="customer_dashboard.php" class="brand-link">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <path d="M16 10a4 4 0 0 1-8 0"></path>
+                    </svg>
+                </span>
+                <span class="brand-text">
+                    <span class="brand-name">AS Berkah</span>
+                    <span class="brand-sub">Storefront</span>
+                </span>
+            </a>
 
-<header>
-        <div>Sistem Informasi Peminjaman Alat</div>
-        <div class="navbar">
-            <a href="customer_dashboard.php">Home</a>
-            <a href="items.php">Items</a>
-            <a href="peminjaman.php">Peminjaman</a>
-            <a href="index.php?logout=true">Logout</a>
+            <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+
+            <nav class="nav-links" data-nav-links aria-label="Customer navigation">
+                <a href="customer_dashboard.php">Catalog</a>
+                <a href="shopping-cart.php">
+                    Cart
+                    <?php if ($cart_count > 0): ?>
+                        <span class="nav-badge"><?php echo $cart_count; ?></span>
+                    <?php endif; ?>
+                </a>
+                <a href="order-history.php" class="active">Orders</a>
+                <a href="logout.php" class="nav-logout">Logout</a>
+            </nav>
         </div>
     </header>
 
-    <div class="container">
-        <div class="content">
-            <h2>Status Peminjaman</h2>
-
-            <?php
-            if ($orders_result->num_rows > 0) {
-                echo "<table class='order-table'>
-                    <thead>
-                        <tr>
-                            <th>Order ID</th>
-                            <th>Date</th>
-                            <th>Total Amount</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>";
-                while ($order = $orders_result->fetch_assoc()) {
-                    echo "<tr>
-                        <td>{$order['id']}</td>
-                        <td>{$order['created_at']}</td>
-                        <td>Rp " . number_format($order['total_amount'], 0, ',', '.') . "</td>
-                        <td><span class='status'>{$order['status']}</span></td>
-                        <td>";
-
-                    // If the status is "Sampai Tujuan", allow to mark as "Selesai"
-                    if ($order['status'] == 'Sampai Tujuan') {
-                        echo "
-                            <form method='POST'>
-                                <input type='hidden' name='order_id' value='{$order['id']}'>
-                                <button type='submit' name='mark_completed'>Selesai</button>
-                            </form>
-                        ";
-                    } else {
-                        echo "<a href='order-details.php?order_id={$order['id']}' class='view-details-btn'>View Details</a>";
-                    }
-
-                    echo "</td>
-                    </tr>";
-                }
-                echo "</tbody></table>";
-            } else {
-                echo "<p>No orders found.</p>";
-            }
-            ?>
+    <main class="page-main">
+        <div class="page-header">
+            <div>
+                <div class="page-eyebrow">Purchases</div>
+                <h1 class="page-title">Order History</h1>
+                <p class="page-subtitle">Track active deliveries and review your completed orders.</p>
+            </div>
+            <a href="customer_dashboard.php" class="btn btn-primary">Shop Again</a>
         </div>
-    </div>
 
-    <footer>
-        <p>&copy; 2024 Sistem Informasi Peminjaman Alat. All Rights Reserved.</p>
+        <section class="surface-card">
+            <?php if ($orders_result->num_rows > 0): ?>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Order</th>
+                                <th>Date</th>
+                                <th>Total</th>
+                                <th>Status</th>
+                                <th class="text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php while ($order = $orders_result->fetch_assoc()): ?>
+                                <tr>
+                                    <td><strong>#<?php echo intval($order['id']); ?></strong></td>
+                                    <td class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($order['created_at'])); ?></td>
+                                    <td class="tabular-nums"><strong>Rp <?php echo number_format($order['total_amount'], 0, ',', '.'); ?></strong></td>
+                                    <td>
+                                        <span class="badge-pill <?php echo getStatusBadgeClass($order['status']); ?>">
+                                            <?php echo htmlspecialchars(ucfirst($order['status'])); ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-right">
+                                        <div class="action-group" style="justify-content:flex-end;">
+                                            <?php if ($order['status'] == 'Sampai Tujuan'): ?>
+                                                <form method="POST" style="margin:0;">
+                                                    <input type="hidden" name="order_id" value="<?php echo intval($order['id']); ?>">
+                                                    <button type="submit" name="mark_completed" class="btn btn-success btn-sm">Mark Completed</button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <a href="order-details.php?order_id=<?php echo intval($order['id']); ?>" class="btn btn-secondary btn-sm">View Details</a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php else: ?>
+                <div class="empty-state">
+                    <h3>No orders yet</h3>
+                    <p>Once you place an order, you can track its progress and view receipts here.</p>
+                    <a href="customer_dashboard.php" class="btn btn-primary">Explore Products</a>
+                </div>
+            <?php endif; ?>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <span>&copy; 2024 AS Berkah E-Commerce. All rights reserved.</span>
+            <span>Customer Storefront</span>
+        </div>
     </footer>
 
+    <script src="assets/js/ui.js"></script>
 </body>
 
 </html>
