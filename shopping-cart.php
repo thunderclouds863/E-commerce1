@@ -11,19 +11,17 @@ $password = "";
 $dbname = "ecommerce_db";
 $conn = new mysqli($servername, $username, $password, $dbname);
 
-// Check if the connection is successful
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// Initialize the cart if not already set
 if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
 
 // Handle add to cart
 if (isset($_GET['add_to_cart'])) {
-    $product_id = $_GET['add_to_cart'];
+    $product_id = intval($_GET['add_to_cart']);
     if ($product_id > 0) {
         if (!isset($_SESSION['cart'][$product_id])) {
             $_SESSION['cart'][$product_id] = ['quantity' => 0];
@@ -34,14 +32,14 @@ if (isset($_GET['add_to_cart'])) {
 
 // Handle remove from cart
 if (isset($_GET['remove_from_cart'])) {
-    $product_id = $_GET['remove_from_cart'];
+    $product_id = intval($_GET['remove_from_cart']);
     if (isset($_SESSION['cart'][$product_id])) {
         unset($_SESSION['cart'][$product_id]);
     }
 }
 
 // Handle quantity change
-if (isset($_POST['update_quantity'])) {
+if (isset($_POST['update_quantity']) || isset($_POST['quantity'])) {
     if (isset($_POST['quantity']) && is_array($_POST['quantity'])) {
         foreach ($_POST['quantity'] as $product_id => $quantity) {
             if (isset($_SESSION['cart'][$product_id])) {
@@ -54,6 +52,47 @@ if (isset($_POST['update_quantity'])) {
     }
 }
 
+// Build cart display items
+$cart_display = [];
+$subtotal = 0;
+$total_units = 0;
+
+foreach ($_SESSION['cart'] as $product_id => $item) {
+    if ($product_id <= 0) {
+        unset($_SESSION['cart'][$product_id]);
+        continue;
+    }
+    if (is_array($item) && isset($item['quantity'])) {
+        $stmt = $conn->prepare("SELECT * FROM products WHERE id = ?");
+        $stmt->bind_param("i", $product_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $res->num_rows > 0) {
+            $product = $res->fetch_assoc();
+            $qty = intval($item['quantity']);
+            $line_total = $product['price'] * $qty;
+            $subtotal += $line_total;
+            $total_units += $qty;
+
+            $imgSrc = '';
+            if (!empty($product['image']) && is_string($product['image']) && file_exists($product['image'])) {
+                $imgSrc = $product['image'];
+            } elseif (file_exists('uploads/produk' . $product['id'] . '.png')) {
+                $imgSrc = 'uploads/produk' . $product['id'] . '.png';
+            }
+
+            $cart_display[] = [
+                'id' => $product_id,
+                'name' => $product['name'],
+                'price' => $product['price'],
+                'quantity' => $qty,
+                'line_total' => $line_total,
+                'image' => $imgSrc,
+            ];
+        }
+        $stmt->close();
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -62,247 +101,139 @@ if (isset($_POST['update_quantity'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shopping Cart</title>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Poppins', sans-serif;
-            background-color: #f4f4f9;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            /* Ensures the body takes up full height */
-        }
-
-        header {
-            width: 100%;
-            background-color: #ff8a65;
-            padding: 10px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            color: white;
-            font-size: 18px;
-            box-sizing: border-box;
-        }
-
-        .navbar {
-            text-align: right;
-            display: flex;
-            /* Make navbar a flex container */
-        }
-
-        .navbar a {
-            color: white;
-            text-decoration: none;
-            margin: 0 10px;
-            border-radius: 5px;
-            padding: 8px 12px;
-        }
-
-        .navbar a:hover {
-            background-color: #ff5722;
-        }
-
-
-        .title a {
-            color: white;
-            text-decoration: none;
-            margin: 0 10px;
-            border-radius: 5px;
-            padding: 8px 12px;
-        }
-
-        .title a:hover {
-            background-color: #ff5722;
-        }
-
-        .content {
-            flex-grow: 1;
-            /* Ensures content takes up remaining space */
-            margin-top: 30px;
-            padding: 20px;
-            background-color: #fff;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-            box-sizing: border-box;
-        }
-
-        .cart-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 10px 0;
-            padding: 10px;
-            background-color: #fff;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-        }
-
-        .cart-item img {
-            width: 100px;
-            height: 100px;
-            object-fit: cover;
-            border-radius: 5px;
-        }
-
-        .cart-item-info {
-            flex-grow: 1;
-            padding-left: 15px;
-        }
-
-        .cart-item-info h3 {
-            font-size: 18px;
-            margin: 0;
-        }
-
-        .cart-item-info .price {
-            font-size: 16px;
-            color: #ff7043;
-        }
-
-        .cart-item-actions {
-            display: flex;
-            align-items: center;
-        }
-
-        .cart-item-actions input {
-            width: 50px;
-            margin-right: 10px;
-        }
-
-        .cart-item-actions a {
-            background-color: #ff7043;
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
-            text-decoration: none;
-        }
-
-        .cart-item-actions a:hover {
-            background-color: #ff5722;
-        }
-
-        .checkout-button {
-            display: inline-block;
-            background-color: #ff7043;
-            color: white;
-            padding: 10px 20px;
-            border-radius: 5px;
-            text-decoration: none;
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .checkout-button:hover {
-            background-color: #ff5722;
-        }
-
-        footer {
-            background-color: #ff8a65;
-            padding: 15px;
-            text-align: center;
-            color: white;
-            font-size: 14px;
-            position: fixed;
-            bottom: 0;
-            width: 100%;
-            box-sizing: border-box;
-            margin-top: auto;
-            /* Ensures footer stays at the bottom */
-        }
-    </style>
+    <title>Shopping Cart — AS Berkah E-Commerce</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css">
 </head>
 
 <body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="customer_dashboard.php" class="brand-link">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <path d="M16 10a4 4 0 0 1-8 0"></path>
+                    </svg>
+                </span>
+                <span class="brand-text">
+                    <span class="brand-name">AS Berkah</span>
+                    <span class="brand-sub">Storefront</span>
+                </span>
+            </a>
 
-    <header>
-        <div class="title">
-            <a href="customer_dashboard.php"> Peminjam Alat Dashboard </a>
-        </div>
-        <div class="navbar">
-            <a href="customer_dashboard.php">Home</a>
-            <a href="shopping-cart.php">Items</a>
-            <a href="checkout.php">Peminjaman</a>
-            <a href="index.php?logout=true" class="logout">Logout</a>
+            <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+
+            <nav class="nav-links" data-nav-links aria-label="Customer navigation">
+                <a href="customer_dashboard.php">Catalog</a>
+                <a href="shopping-cart.php" class="active">
+                    Cart
+                    <?php if ($total_units > 0): ?>
+                        <span class="nav-badge"><?php echo $total_units; ?></span>
+                    <?php endif; ?>
+                </a>
+                <a href="order-history.php">Orders</a>
+                <a href="logout.php" class="nav-logout">Logout</a>
+            </nav>
         </div>
     </header>
 
-    <div class="content">
-        <h2>Cart Peminjaman</h2>
+    <main class="page-main">
+        <div class="page-header">
+            <div>
+                <div class="page-eyebrow">Your Bag</div>
+                <h1 class="page-title">Shopping Cart</h1>
+                <p class="page-subtitle">Review your selected items and adjust quantities before checkout.</p>
+            </div>
+            <a href="customer_dashboard.php" class="btn btn-secondary">Continue Shopping</a>
+        </div>
 
-        <form method="POST">
-            <?php
-            if (empty($_SESSION['cart'])) {
-                echo "<p>Your cart is empty.</p>";
-            } else {
-                foreach ($_SESSION['cart'] as $product_id => $item) {
-                    if ($product_id <= 0) {
-                        unset($_SESSION['cart'][$product_id]);
-                        continue;
-                    }
+        <?php if (empty($cart_display)): ?>
+            <div class="surface-card empty-state">
+                <div class="empty-state-icon" aria-hidden="true">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="9" cy="21" r="1"></circle>
+                        <circle cx="20" cy="21" r="1"></circle>
+                        <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                    </svg>
+                </div>
+                <h3>Your cart is empty</h3>
+                <p>Add products from the catalog to get started with your order.</p>
+                <a href="customer_dashboard.php" class="btn btn-primary">Browse Catalog</a>
+            </div>
+        <?php else: ?>
+            <div class="split-layout">
+                <div class="cart-list">
+                    <?php foreach ($cart_display as $item): ?>
+                        <div class="cart-row">
+                            <?php if ($item['image'] !== ''): ?>
+                                <img class="cart-row-img" src="<?php echo htmlspecialchars($item['image']); ?>" alt="<?php echo htmlspecialchars($item['name']); ?>">
+                            <?php else: ?>
+                                <div class="cart-row-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:12px;">No img</div>
+                            <?php endif; ?>
 
-                    if (is_array($item) && isset($item['quantity'])) {
-                        $sql = "SELECT * FROM products WHERE id = $product_id";
-                        $result = $conn->query($sql);
-
-                        if ($result && $result->num_rows > 0) {
-                            $product = $result->fetch_assoc();
-                            $total_price = $product['price'] * $item['quantity'];
-                            ?>
-
-                            <div class="cart-item">
-                                <!-- <?php
-                                $product_image_name = 'produk' . $product['id'];
-                                $image_extension = pathinfo($product['image'], PATHINFO_EXTENSION);
-                                $image_path = 'uploads/' . $product_image_name . '.' . $image_extension;
-
-                                if (file_exists($image_path)) {
-                                    $image_src = $image_path;
-                                } else {
-                                    $image_src = 'uploads/default_' . $product_image_name . '.' . $image_extension;
-                                }
-                                ?>
-
-                                <img src="<?php echo $image_src; ?>" alt="<?php echo $product['name']; ?>"> -->
-
-                                <div class="cart-item-info">
-                                    <h3><?php echo $product['name']; ?></h3>
-                                    <p class="price">Rp <?php echo number_format($product['price'], 0, ',', '.'); ?> x
-                                        <?php echo $item['quantity']; ?>
-                                    </p>
-                                </div>
-
-                                <div class="cart-item-actions">
-                                    <form action="shopping-cart.php" method="POST" class="update-quantity-form">
-                                        <input type="number" name="quantity[<?php echo $product_id; ?>]"
-                                            value="<?php echo $item['quantity']; ?>" min="1" max="10" oninput="this.form.submit()">
-                                        <a href="shopping-cart.php?remove_from_cart=<?php echo $product_id; ?>" class="remove-button"
-                                            onclick="return confirm('Are you sure you want to remove this item?');">Remove</a>
-                                    </form>
+                            <div class="cart-row-info">
+                                <div class="cart-row-title"><?php echo htmlspecialchars($item['name']); ?></div>
+                                <div class="cart-row-unit tabular-nums">
+                                    Rp <?php echo number_format($item['price'], 0, ',', '.'); ?> each
+                                    &middot;
+                                    <strong>Rp <?php echo number_format($item['line_total'], 0, ',', '.'); ?></strong>
                                 </div>
                             </div>
 
-                            <?php
-                        } else {
-                            echo "<p>Product not found for ID: $product_id</p>";
-                        }
-                    } else {
-                        echo "<p>Error: Cart item is not structured properly for product ID: $product_id</p>";
-                    }
-                }
-            }
-            ?>
-            <a href="checkout.php" class="checkout-button">Proceed to Checkout</a>
-        </form>
+                            <div class="cart-row-controls">
+                                <form action="shopping-cart.php" method="POST" style="display:inline-flex;align-items:center;gap:8px;margin:0;">
+                                    <input type="hidden" name="update_quantity" value="1">
+                                    <input class="form-control qty-input" type="number" name="quantity[<?php echo $item['id']; ?>]"
+                                           value="<?php echo $item['quantity']; ?>" min="1" max="99"
+                                           aria-label="Quantity for <?php echo htmlspecialchars($item['name']); ?>"
+                                           onchange="this.form.submit()">
+                                </form>
+                                <a href="shopping-cart.php?remove_from_cart=<?php echo $item['id']; ?>"
+                                   class="btn btn-danger btn-sm"
+                                   onclick="return confirm('Remove this item from your cart?');">Remove</a>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
 
-    </div>
+                <aside class="summary-card">
+                    <h2 class="summary-title">Order Summary</h2>
+                    <div class="summary-line">
+                        <span>Items (<?php echo $total_units; ?>)</span>
+                        <span class="tabular-nums">Rp <?php echo number_format($subtotal, 0, ',', '.'); ?></span>
+                    </div>
+                    <div class="summary-line">
+                        <span>Shipping</span>
+                        <span>Calculated at checkout</span>
+                    </div>
+                    <div class="summary-total">
+                        <span>Total</span>
+                        <span class="summary-total-amount">Rp <?php echo number_format($subtotal, 0, ',', '.'); ?></span>
+                    </div>
+                    <a href="checkout.php" class="btn btn-primary btn-lg btn-block" style="margin-top:20px;">Proceed to Checkout</a>
+                </aside>
+            </div>
+        <?php endif; ?>
+    </main>
 
-    <footer>
-        <p>&copy; 2024 Sistem Informasi Peminjaman Alat. All Rights Reserved.</p>
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <span>&copy; 2024 AS Berkah E-Commerce. All rights reserved.</span>
+            <span>Customer Storefront</span>
+        </div>
     </footer>
+
+    <script src="assets/js/ui.js"></script>
 </body>
 
 </html>

@@ -17,15 +17,13 @@ if ($conn->connect_error) {
 
 // Handle Order Confirmation
 if (isset($_GET['confirm_order'])) {
-    $order_id = $_GET['confirm_order'];
+    $order_id = intval($_GET['confirm_order']);
 
-    // Update order status to 'Dikonfirmasi'
     $update_status = "UPDATE orders SET status = 'Dikonfirmasi' WHERE id = ?";
     $stmt = $conn->prepare($update_status);
     $stmt->bind_param("i", $order_id);
     $stmt->execute();
 
-    // Decrease stock for each item in the order
     $order_items = "SELECT product_id, quantity FROM order_items WHERE order_id = ?";
     $stmt = $conn->prepare($order_items);
     $stmt->bind_param("i", $order_id);
@@ -36,7 +34,6 @@ if (isset($_GET['confirm_order'])) {
         $product_id = $item['product_id'];
         $quantity = $item['quantity'];
 
-        // Update product stock
         $update_stock = "UPDATE products SET stock = stock - ? WHERE id = ?";
         $stmt = $conn->prepare($update_stock);
         $stmt->bind_param("ii", $quantity, $product_id);
@@ -52,181 +49,136 @@ $sql = "SELECT orders.id, orders.created_at, orders.total_amount, orders.status,
         JOIN users ON orders.user_id = users.id
         ORDER BY orders.created_at DESC";
 $result = $conn->query($sql);
+
+function getOrderBadgeClass($status) {
+    $s = strtolower(trim($status));
+    if ($s === 'selesai' || $s === 'paid') return 'badge-success';
+    if ($s === 'pending' || $s === 'awaiting payment' || $s === 'dikemas') return 'badge-warning';
+    if ($s === 'dikonfirmasi' || $s === 'siap dikirim' || $s === 'dikirim' || $s === 'sampai tujuan') return 'badge-info';
+    return 'badge-neutral';
+}
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Order Management - Admin</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            margin: 0;
-            padding: 0;
-        }
-        header {
-            padding: 20px;
-            text-align: center;
-            color: white;
-        }
-        .container {
-            width: 80%;
-            margin: 20px auto;
-        }
-        .order-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        .order-table th, .order-table td {
-            padding: 10px;
-            text-align: left;
-            border: 1px solid #ddd;
-        }
-        .order-table th {
-            background-color: #ffccbc;
-        }
-        .order-table td .status {
-            font-weight: bold;
-        }
-        .confirm-btn {
-            background-color: #4caf50;
-            color: white;
-            padding: 6px 12px;
-            border: none;
-            cursor: pointer;
-        }
-        .confirm-btn:hover {
-            background-color: #388e3c;
-        }
-        footer {
-            background-color: #ff7043;
-            padding: 10px;
-            color: white;
-            text-align: center;
-        }
-
-    footer {
-      background-color: #ff7043;
-      color: white;
-      text-align: center;
-      padding: 10px;
-      position: fixed;
-      bottom: 0;
-      width: 100%;
-    }
-
-    nav {
-      background-color: #ff7043;
-      color: white;
-      padding: 15px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 1000;
-    }
-
-    nav ul {
-      display: flex;
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-
-    nav ul li {
-      margin: 0 15px;
-    }
-    nav ul li a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      padding: 5px 10px;
-      border-radius: 5px;
-      transition: background-color 0.3s ease;
-    }
-
-    nav div a {
-      color: white;
-      text-decoration: none;
-      font-weight: bold;
-      padding: 5px 10px;
-      border-radius: 5px;
-      transition: background-color 0.3s ease;
-    }
-
-    nav ul li a:hover {
-      background-color: #ff8a65;
-    }
-
-    nav div a:hover {
-      background-color: #ff8a65;
-    }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Management — AS Berkah E-Commerce</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
-<body>
-<nav>
-    <div><a href="admin_dashboard.php">Admin Dashboard</a></div>
-    <ul>
-      <li><a href="admin_dashboard.php">Home</a></li>
-      <li><a href="manajemen_user.php">User Management</a></li>
-      <li><a href="inventory_management.php">Inventory</a></li>
-      <li><a href="order_management.php">Orders</a></li>
-      <li><a href="report.php">Report</a></li>
-      <li><a href="logout.php">Logout</a></li>
-    </ul>
-  </nav>
-    <header>
-        <h1 style="color:#ff7043;">Order Management</h1>
-    </header>
 
-    <div class="container">
-        <h2>Order List</h2>
-        <table class="order-table">
-            <thead>
-                <tr>
-                    <th>Order ID</th>
-                    <th>User</th>
-                    <th>Date</th>
-                    <th>Total Amount</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php
-                if ($result->num_rows > 0) {
-                    while ($row = $result->fetch_assoc()) {
-                        echo "<tr>
-                                <td>{$row['id']}</td>
-                                <td>{$row['username']}</td>
-                                <td>{$row['created_at']}</td>
-                                <td>Rp " . number_format($row['total_amount'], 0, ',', '.') . "</td>
-                                <td><span class='status'>{$row['status']}</span></td>
-                                <td>";
-                        if ($row['status'] == 'Pending') {
-                            echo "<a href='order-management.php?confirm_order={$row['id']}' class='confirm-btn'>Confirm</a>";
-                        }
-                        echo "</td>
-                            </tr>";
-                    }
-                } else {
-                    echo "<tr><td colspan='6'>No orders found.</td></tr>";
-                }
-                ?>
-            </tbody>
-        </table>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="admin_dashboard.php" class="brand-link">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <path d="M16 10a4 4 0 0 1-8 0"></path>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <span class="brand-name">AS Berkah</span>
+          <span class="brand-sub">Admin Console</span>
+        </span>
+      </a>
+
+      <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+
+      <nav class="nav-links" data-nav-links aria-label="Admin navigation">
+        <a href="admin_dashboard.php">Overview</a>
+        <a href="manajemen_user.php">Users</a>
+        <a href="inventory_management.php">Inventory</a>
+        <a href="order-management.php" class="active">Orders</a>
+        <a href="report.php">Reports</a>
+        <a href="logout.php" class="nav-logout">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-main">
+    <div class="page-header">
+      <div>
+        <div class="page-eyebrow">Fulfillment</div>
+        <h1 class="page-title">Order Management</h1>
+        <p class="page-subtitle">Review incoming customer orders and confirm pending transactions.</p>
+      </div>
     </div>
 
-    <footer>
-        <p>&copy; 2024 AS Berkah E-Commerce. All Rights Reserved.</p>
-    </footer>
+    <section class="surface-card">
+      <div class="surface-card-header">
+        <h2 class="surface-card-title">All Orders</h2>
+        <span class="badge-pill badge-neutral"><?php echo $result ? $result->num_rows : 0; ?> orders</span>
+      </div>
 
+      <?php if ($result && $result->num_rows > 0): ?>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Customer</th>
+                <th>Date</th>
+                <th class="text-right">Total</th>
+                <th>Status</th>
+                <th class="text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php while ($row = $result->fetch_assoc()): ?>
+                <tr>
+                  <td><strong>#<?php echo intval($row['id']); ?></strong></td>
+                  <td><?php echo htmlspecialchars($row['username']); ?></td>
+                  <td class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($row['created_at'])); ?></td>
+                  <td class="text-right tabular-nums"><strong>Rp <?php echo number_format($row['total_amount'], 0, ',', '.'); ?></strong></td>
+                  <td>
+                    <span class="badge-pill <?php echo getOrderBadgeClass($row['status']); ?>">
+                      <?php echo htmlspecialchars(ucfirst($row['status'])); ?>
+                    </span>
+                  </td>
+                  <td class="text-right">
+                    <?php if (strtolower($row['status']) === 'pending'): ?>
+                      <a href="order-management.php?confirm_order=<?php echo intval($row['id']); ?>" class="btn btn-success btn-sm">Confirm Order</a>
+                    <?php else: ?>
+                      <span style="font-size:12.5px;color:var(--ink-muted);">—</span>
+                    <?php endif; ?>
+                  </td>
+                </tr>
+              <?php endwhile; ?>
+            </tbody>
+          </table>
+        </div>
+      <?php else: ?>
+        <div class="empty-state">
+          <h3>No orders found</h3>
+          <p>Customer orders will appear here once placed.</p>
+        </div>
+      <?php endif; ?>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span>&copy; 2024 AS Berkah E-Commerce. All rights reserved.</span>
+      <span>Admin Console</span>
+    </div>
+  </footer>
+
+  <script src="assets/js/ui.js"></script>
 </body>
+
 </html>
 
 <?php
