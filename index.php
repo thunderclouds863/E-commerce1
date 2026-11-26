@@ -46,7 +46,6 @@ if (isset($_POST['submit'])) {
 
       if ($result->num_rows > 0) {
         $user = $result->fetch_assoc();
-        // Use password_verify to check if the entered password matches the hashed password
         if (password_verify($password, $user['password'])) {
           $_SESSION['user_id'] = $user['id'];
           $_SESSION['role'] = $user['role'];
@@ -57,7 +56,6 @@ if (isset($_POST['submit'])) {
       } else {
         $error_message = "Invalid credentials or account not approved yet.";
       }
-
     }
   }
 }
@@ -69,159 +67,85 @@ if (isset($_POST['submit'])) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AS Berkah E-Commerce</title>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
-  <style>
-    body {
-      font-family: 'Poppins', sans-serif;
-      background-color: #fef5e7;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-    }
-
-    .container {
-      width: 100%;
-      max-width: 400px;
-      padding: 20px;
-      background: #fff5e5;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      border-radius: 15px;
-      text-align: center;
-      animation: fadeIn 0.5s ease-in-out;
-    }
-
-    @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-
-      to {
-        opacity: 1;
-      }
-    }
-
-    h2 {
-      color: #ff8a65;
-      margin-bottom: 20px;
-    }
-
-    form {
-      display: flex;
-      flex-direction: column;
-    }
-
-    input,
-    select,
-    button {
-      margin: 10px 0;
-      padding: 12px;
-      font-size: 16px;
-      border: 1px solid #ffccbc;
-      border-radius: 8px;
-      background-color: #fff;
-    }
-
-    button {
-      background-color: #ff8a65;
-      color: white;
-      cursor: pointer;
-      transition: background-color 0.3s ease;
-    }
-
-    button:hover {
-      background-color: #ff7043;
-    }
-
-    .link {
-      margin-top: 10px;
-      font-size: 14px;
-    }
-
-    .link a {
-      color: #ff8a65;
-      text-decoration: none;
-      font-weight: bold;
-    }
-
-    .link a:hover {
-      text-decoration: underline;
-    }
-
-    .error-popup {
-      position: fixed;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background-color: #ff5252;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-      animation: slideIn 0.5s ease-out, fadeOut 4s ease-in forwards;
-    }
-
-    @keyframes slideIn {
-      from {
-        transform: translateX(-50%) translateY(-20px);
-        opacity: 0;
-      }
-
-      to {
-        transform: translateX(-50%) translateY(0);
-        opacity: 1;
-      }
-    }
-
-    @keyframes fadeOut {
-      90% {
-        opacity: 1;
-      }
-
-      100% {
-        opacity: 0;
-      }
-    }
-  </style>
+  <title>Sign In — AS Berkah E-Commerce</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 
-<body>
-  <?php if (!empty($error_message)): ?>
-    <div class="error-popup"><?php echo $error_message; ?></div>
-  <?php endif; ?>
+<body class="auth-page">
+  <main class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-header">
+        <div class="auth-logo" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <path d="M16 10a4 4 0 0 1-8 0"></path>
+          </svg>
+        </div>
+        <h1 class="auth-title">AS Berkah</h1>
+        <p class="auth-subtitle">Sign in to your account</p>
+      </div>
 
-  <div class="container">
-    <h2>Welcome to AS Berkah E-Commerce</h2>
-    <form method="POST">
-      <select name="role" id="role" required>
-        <option value="" disabled selected>-- Select Role --</option>
-        <option value="admin">Admin</option>
-        <option value="customer">Customer</option>
-        <option value="employee">Employee</option>
-        <option value="courier">Courier</option>
-      </select>
-      <input type="text" name="username" placeholder="Username" required>
-      <input type="password" name="password" placeholder="Password" required>
-      <button type="submit" name="submit" value="login">Login</button>
-    </form>
-    <div class="link" id="link-section">
-      <p>Don't have an account? <a href="register.php">Register Here</a></p>
+      <?php if (!empty($error_message)): ?>
+        <div class="alert-banner alert-banner--error" role="alert">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px;">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <span><?php echo htmlspecialchars($error_message); ?></span>
+        </div>
+      <?php endif; ?>
+
+      <form method="POST" novalidate>
+        <div class="form-group">
+          <label class="form-label" for="role">Role</label>
+          <select class="form-select" name="role" id="role" required>
+            <option value="" disabled selected>Select your role</option>
+            <option value="admin">Admin</option>
+            <option value="customer">Customer</option>
+            <option value="employee">Employee</option>
+            <option value="courier">Courier</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="username">Username</label>
+          <input class="form-control" type="text" id="username" name="username" placeholder="Enter your username" autocomplete="username" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <div class="password-field">
+            <input class="form-control" type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
+            <button type="button" class="password-toggle" data-toggle-password="password" aria-label="Show password" aria-pressed="false">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-lg btn-block" type="submit" name="submit" value="login">Sign In</button>
+      </form>
+
+      <div class="auth-footer" id="link-section">
+        Don't have an account? <a href="register.php">Create one</a>
+      </div>
     </div>
-  </div>
+  </main>
 
+  <script src="assets/js/ui.js"></script>
   <script>
     const roleSelect = document.getElementById('role');
     const linkSection = document.getElementById('link-section');
 
     roleSelect.addEventListener('change', function () {
-      if (this.value === 'admin') {
-        linkSection.style.display = 'none';
-      } else {
-        linkSection.style.display = 'block';
-      }
+      linkSection.style.display = this.value === 'admin' ? 'none' : 'block';
     });
   </script>
 </body>

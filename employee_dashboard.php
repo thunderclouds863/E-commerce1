@@ -12,26 +12,19 @@ $dbname = "ecommerce_db";
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 
-// Periksa koneksi
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// Mengambil semua pesanan yang statusnya 'Dikonfirmasi' atau 'Dikemas'
-$query = "SELECT * FROM orders WHERE status IN ('Dikonfirmasi', 'Dikemas')";
-$result = mysqli_query($conn, $query);
-
 // Proses perubahan status
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
-    // Pastikan 'order_id' dan 'new_status' ada
     if (isset($_POST['order_id']) && isset($_POST['new_status'])) {
-        $order_id = $_POST['order_id'];
+        $order_id = intval($_POST['order_id']);
         $new_status = $_POST['new_status'];
 
-        // Update status pesanan
-        $update_query = "UPDATE orders SET status='$new_status' WHERE id=$order_id";
-        if (mysqli_query($conn, $update_query)) {
-            // Redirect setelah update
+        $stmt = $conn->prepare("UPDATE orders SET status = ? WHERE id = ?");
+        $stmt->bind_param("si", $new_status, $order_id);
+        if ($stmt->execute()) {
             header("Location: employee_dashboard.php");
             exit();
         } else {
@@ -40,11 +33,24 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
     }
 }
 
-// Logout functionality
 if (isset($_GET['logout'])) {
     session_destroy();
     header("Location: index.php");
     exit();
+}
+
+$query = "SELECT * FROM orders WHERE status IN ('Dikonfirmasi', 'Dikemas') ORDER BY created_at DESC";
+$result = mysqli_query($conn, $query);
+
+$orders = [];
+$confirmed_count = 0;
+$packed_count = 0;
+if ($result) {
+    while ($row = mysqli_fetch_assoc($result)) {
+        $orders[] = $row;
+        if ($row['status'] === 'Dikonfirmasi') $confirmed_count++;
+        if ($row['status'] === 'Dikemas') $packed_count++;
+    }
 }
 ?>
 
@@ -54,158 +60,130 @@ if (isset($_GET['logout'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Employee Order Confirmation</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #e8f5e9;
-            /* Light pastel green background */
-            margin: 0;
-            padding: 0;
-        }
-
-        .header {
-            background-color: #81c784;
-            /* Pastel green header */
-            color: white;
-            padding: 10px 0;
-            text-align: center;
-            position: relative;
-        }
-
-        .logout-btn {
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            background-color: #ff8a80;
-            /* Light coral-red for logout button */
-            color: white;
-            padding: 8px 16px;
-            border-radius: 5px;
-            text-decoration: none;
-            font-size: 16px;
-            transition: background-color 0.3s;
-        }
-
-        .logout-btn:hover {
-            background-color: #ff5252;
-            /* Slightly darker red on hover */
-        }
-
-        .container {
-            width: 80%;
-            margin: auto;
-            background-color: #ffffff;
-            /* White background for content */
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-
-        th,
-        td {
-            padding: 12px;
-            text-align: center;
-            border: 1px solid #ddd;
-        }
-
-        th {
-            background-color: #66bb6a;
-            /* Pastel green for table headers */
-            color: white;
-        }
-
-        button {
-            padding: 5px 10px;
-            background-color: #81c784;
-            /* Matching pastel green for buttons */
-            color: white;
-            border: none;
-            cursor: pointer;
-            border-radius: 5px;
-        }
-
-        button:hover {
-            background-color: #66bb6a;
-            /* Slightly darker pastel green on hover */
-        }
-
-        .status-buttons {
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        footer {
-            background-color: #81c784;
-            /* Pastel green footer */
-            color: white;
-            text-align: center;
-            padding: 10px 0;
-            margin-top: 20px;
-        }
-    </style>
+    <title>Employee Fulfillment — AS Berkah E-Commerce</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css">
 </head>
 
 <body>
+    <header class="site-header">
+        <div class="header-inner">
+            <a href="employee_dashboard.php" class="brand-link">
+                <span class="brand-mark" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                    </svg>
+                </span>
+                <span class="brand-text">
+                    <span class="brand-name">AS Berkah</span>
+                    <span class="brand-sub">Fulfillment</span>
+                </span>
+            </a>
 
-    <div class="header">
-        <h2>Employee Dashboard</h2>
-        <a href="?logout=true" class="logout-btn">Logout</a>
-    </div>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <span class="role-chip"><span class="role-chip-dot"></span> Employee</span>
+                <a href="?logout=true" class="btn btn-danger btn-sm">Logout</a>
+            </div>
+        </div>
+    </header>
 
-    <div class="container">
-        <h1>Employee Order Confirmation</h1>
+    <main class="page-main page-main--narrow">
+        <div class="page-header">
+            <div>
+                <div class="page-eyebrow">Warehouse Queue</div>
+                <h1 class="page-title">Order Fulfillment</h1>
+                <p class="page-subtitle">Pack confirmed orders and mark them ready for courier pickup.</p>
+            </div>
+        </div>
 
-        <h2>Orders to be Processed</h2>
+        <section class="kpi-grid kpi-grid--2" aria-label="Fulfillment queue summary">
+            <div class="kpi-card">
+                <div class="kpi-top">
+                    <span class="kpi-label">Awaiting Packing</span>
+                    <span class="kpi-icon kpi-icon--info" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </span>
+                </div>
+                <div class="kpi-value"><?php echo $confirmed_count; ?></div>
+                <div class="kpi-meta">Status: Dikonfirmasi</div>
+            </div>
 
-        <table>
-            <tr>
-                <th>Order ID</th>
-                <th>Status</th>
-                <th>Aksi</th>
-            </tr>
+            <div class="kpi-card">
+                <div class="kpi-top">
+                    <span class="kpi-label">Currently Packing</span>
+                    <span class="kpi-icon kpi-icon--warning" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                    </span>
+                </div>
+                <div class="kpi-value"><?php echo $packed_count; ?></div>
+                <div class="kpi-meta">Status: Dikemas</div>
+            </div>
+        </section>
 
-            <?php while ($row = mysqli_fetch_assoc($result)): ?>
-                <tr>
-                    <td><?php echo $row['id']; ?></td>
-                    <td><?php echo $row['status']; ?></td>
-                    <td>
-                        <?php if ($row['status'] == 'Dikonfirmasi'): ?>
-                            <form method="POST" class="status-buttons">
-                                <input type="hidden" name="order_id" value="<?php echo $row['id']; ?>">
-                                <input type="hidden" name="new_status" value="Dikemas">
-                                <button type="submit" name="update_status">Dikemas</button>
-                            </form>
-                        <?php elseif ($row['status'] == 'Dikemas'): ?>
-                            <form method="POST" class="status-buttons">
-                                <input type="hidden" name="order_id" value="<?php echo $row['id']; ?>">
-                                <input type="hidden" name="new_status" value="Siap Dikirim">
-                                <button type="submit" name="update_status">Siap Dikirim</button>
-                            </form>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-            <?php endwhile; ?>
+        <section class="surface-card">
+            <div class="surface-card-header">
+                <h2 class="surface-card-title">Orders to Process</h2>
+                <span class="badge-pill badge-neutral"><?php echo count($orders); ?> active</span>
+            </div>
 
-        </table>
-    </div>
+            <?php if (count($orders) > 0): ?>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Current Status</th>
+                                <th class="text-right">Next Step</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($orders as $row): ?>
+                                <tr>
+                                    <td><strong>#<?php echo intval($row['id']); ?></strong></td>
+                                    <td>
+                                        <span class="badge-pill <?php echo $row['status'] === 'Dikonfirmasi' ? 'badge-info' : 'badge-warning'; ?>">
+                                            <?php echo htmlspecialchars($row['status']); ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-right">
+                                        <?php if ($row['status'] == 'Dikonfirmasi'): ?>
+                                            <form method="POST" style="margin:0;display:inline;">
+                                                <input type="hidden" name="order_id" value="<?php echo intval($row['id']); ?>">
+                                                <input type="hidden" name="new_status" value="Dikemas">
+                                                <button type="submit" name="update_status" class="btn btn-primary btn-sm">Mark as Dikemas</button>
+                                            </form>
+                                        <?php elseif ($row['status'] == 'Dikemas'): ?>
+                                            <form method="POST" style="margin:0;display:inline;">
+                                                <input type="hidden" name="order_id" value="<?php echo intval($row['id']); ?>">
+                                                <input type="hidden" name="new_status" value="Siap Dikirim">
+                                                <button type="submit" name="update_status" class="btn btn-success btn-sm">Ready (Siap Dikirim)</button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php else: ?>
+                <div class="empty-state">
+                    <h3>Queue is clear</h3>
+                    <p>No confirmed or packed orders are waiting right now.</p>
+                </div>
+            <?php endif; ?>
+        </section>
+    </main>
 
-    <footer>
-        <p>&copy; 2024 AS Berkah E-Commerce. All Rights Reserved.</p>
+    <footer class="site-footer">
+        <div class="footer-inner">
+            <span>&copy; 2024 AS Berkah E-Commerce. All rights reserved.</span>
+            <span>Employee Fulfillment Portal</span>
+        </div>
     </footer>
 
+    <script src="assets/js/ui.js"></script>
 </body>
 
 </html>
