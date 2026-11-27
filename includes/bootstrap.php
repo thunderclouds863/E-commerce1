@@ -83,6 +83,18 @@ function status_badge_class(string $status): string {
     return 'badge-neutral';
 }
 
+function ensure_password_resets_table(mysqli $conn): void {
+    $conn->query("CREATE TABLE IF NOT EXISTS password_resets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        token_hash CHAR(64) NOT NULL UNIQUE,
+        expires_at DATETIME NOT NULL,
+        used_at DATETIME DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )");
+}
+
 function cart_total_units(): int {
     $count = 0;
     if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
