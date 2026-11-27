@@ -106,7 +106,7 @@ if ($result && $result->num_rows > 0) {
 
             <?php if (count($completed_orders) > 0): ?>
                 <div class="table-wrap">
-                    <table id="salesTable" class="data-table">
+                    <table id="salesTable" class="data-table data-table--responsive">
                         <thead>
                             <tr>
                                 <th>Order ID</th>
@@ -118,10 +118,10 @@ if ($result && $result->num_rows > 0) {
                         <tbody>
                             <?php foreach ($completed_orders as $order): ?>
                                 <tr>
-                                    <td><strong>#<?php echo intval($order['id']); ?></strong></td>
-                                    <td class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($order['created_at'])); ?></td>
-                                    <td class="text-right tabular-nums"><strong><?php echo format_idr($order['total_amount']); ?></strong></td>
-                                    <td class="text-right">
+                                    <td data-label="Order"><strong>#<?php echo intval($order['id']); ?></strong></td>
+                                    <td data-label="Date" class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($order['created_at'])); ?></td>
+                                    <td data-label="Total" class="text-right tabular-nums"><strong><?php echo format_idr($order['total_amount']); ?></strong></td>
+                                    <td data-actions="true" class="text-right">
                                         <button type="button" class="btn btn-secondary btn-sm view-details" data-order-id="<?php echo intval($order['id']); ?>">View Details</button>
                                     </td>
                                 </tr>

@@ -205,7 +205,7 @@ $flash = get_flash();
 
       <?php if ($products->num_rows > 0): ?>
         <div class="table-wrap">
-          <table class="data-table">
+          <table class="data-table data-table--responsive">
             <thead>
               <tr>
                 <th>Product</th>
@@ -221,7 +221,7 @@ $flash = get_flash();
                 $stockCls = $stock === 0 ? 'badge-danger' : ($stock <= 10 ? 'badge-warning' : 'badge-success');
               ?>
                 <tr>
-                  <td>
+                  <td data-primary="true">
                     <div style="display:flex;align-items:center;gap:12px;">
                       <?php if (!empty($product['image']) && file_exists($product['image'])): ?>
                         <img class="table-thumb" src="<?php echo e($product['image']); ?>" alt="<?php echo e($product['name']); ?>">
@@ -234,12 +234,12 @@ $flash = get_flash();
                       </div>
                     </div>
                   </td>
-                  <td style="max-width:300px;color:var(--ink-secondary);"><?php echo e($product['description']); ?></td>
-                  <td class="text-right tabular-nums"><strong><?php echo format_idr($product['price']); ?></strong></td>
-                  <td class="text-center">
+                  <td data-label="Description" style="max-width:300px;color:var(--ink-secondary);"><?php echo e($product['description']); ?></td>
+                  <td data-label="Price" class="text-right tabular-nums"><strong><?php echo format_idr($product['price']); ?></strong></td>
+                  <td data-label="Stock" class="text-center">
                     <span class="badge-pill <?php echo $stockCls; ?>"><?php echo $stock; ?></span>
                   </td>
-                  <td class="text-right">
+                  <td data-actions="true" class="text-right">
                     <div class="action-group" style="justify-content:flex-end;">
                       <button type="button" class="btn btn-secondary btn-sm" onclick='editProduct(<?php echo htmlspecialchars(json_encode($product), ENT_QUOTES, "UTF-8"); ?>)'>Edit</button>
                       <form method="POST" style="margin:0;" onsubmit="return confirm('Delete this product?');">
