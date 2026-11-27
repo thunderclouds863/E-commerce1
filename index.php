@@ -10,6 +10,7 @@ if (isset($_GET['logout'])) {
 
 $conn = db();
 $error_message = '';
+$flash = get_flash();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
     if (!verify_csrf()) {
@@ -123,6 +124,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
           <p class="auth-subtitle">Access your AS Berkah account</p>
         </div>
 
+        <?php if ($flash): ?>
+          <div class="alert-banner alert-banner--<?php echo e($flash['type']); ?>" role="status">
+            <span><?php echo e($flash['message']); ?></span>
+          </div>
+        <?php endif; ?>
+
         <?php if (!empty($error_message)): ?>
           <div class="alert-banner alert-banner--error" role="alert">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px;">
@@ -153,7 +160,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
           </div>
 
           <div class="form-group">
-            <label class="form-label" for="password">Password</label>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <label class="form-label" for="password" style="margin-bottom:0;">Password</label>
+              <a href="forgot-password.php" id="forgot-link" style="font-size:12.5px;font-weight:600;">Forgot password?</a>
+            </div>
             <div class="password-field">
               <input class="form-control" type="password" id="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
               <button type="button" class="password-toggle" data-toggle-password="password" aria-label="Show password" aria-pressed="false">
@@ -179,9 +189,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit'])) {
   <script>
     const roleSelect = document.getElementById('role');
     const linkSection = document.getElementById('link-section');
+    const forgotLink = document.getElementById('forgot-link');
 
     roleSelect.addEventListener('change', function () {
-      linkSection.style.display = this.value === 'admin' ? 'none' : 'block';
+      const isAdmin = this.value === 'admin';
+      linkSection.style.display = isAdmin ? 'none' : 'block';
+      if (forgotLink) forgotLink.style.display = isAdmin ? 'none' : 'inline';
     });
   </script>
 </body>
