@@ -1,71 +1,108 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'customer') {
-    header("Location: index.php");
-    exit;
-}
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('customer');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
-
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
+$conn = db();
 $cart_items = $_SESSION['cart'] ?? [];
-$total_amount = 0;
 $checkout_error = '';
+$shipping_address = trim($_POST['address'] ?? '');
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $payment_method = $_POST['payment_method'];
-
-    if (empty($cart_items)) {
-        $checkout_error = "Your cart is empty. Please add items to your cart before checkout.";
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf()) {
+        $checkout_error = "Session expired. Please refresh and try again.";
+    } elseif (empty($cart_items)) {
+        $checkout_error = "Your cart is empty. Please add items before checkout.";
+    } elseif (strlen($shipping_address) < 5) {
+        $checkout_error = "Please enter a complete shipping address (at least 5 characters).";
     } else {
-        $user_id = $_SESSION['user_id'];
+        $payment_method = $_POST['payment_method'] ?? '';
+        if (!in_array($payment_method, ['bank_transfer', 'credit_card', 'cash_on_delivery'], true)) {
+            $checkout_error = "Please select a valid payment method.";
+        } else {
+            $user_id = intval($_SESSION['user_id']);
+            $initial_status = $payment_method === 'cash_on_delivery' ? 'Pending' : 'awaiting payment';
+            $payment_code = $payment_method === 'cash_on_delivery' ? null : random_int(100, 999);
 
-        $sql = "INSERT INTO orders (user_id, total_amount, payment_method, status) VALUES (?, 0, ?, 'pending')";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("is", $user_id, $payment_method);
+            $conn->begin_transaction();
+            try {
+                $total_amount = 0;
+                $validated_lines = [];
 
-        if ($stmt->execute()) {
-            $order_id = $stmt->insert_id;
+                foreach ($cart_items as $product_id => $item) {
+                    $pid = intval($product_id);
+                    $qty = is_array($item) && isset($item['quantity']) ? intval($item['quantity']) : 0;
+                    if ($pid <= 0 || $qty <= 0) {
+                        continue;
+                    }
 
-            foreach ($cart_items as $product_id => $item) {
-                $sql = "SELECT * FROM products WHERE id = ?";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("i", $product_id);
-                $stmt->execute();
-                $result = $stmt->get_result();
-
-                if ($result && $result->num_rows > 0) {
-                    $product = $result->fetch_assoc();
-                    $price = $product['price'];
-                    $quantity = $item['quantity'];
-                    $total_amount += $price * $quantity;
-
-                    $sql = "INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)";
-                    $stmt = $conn->prepare($sql);
-                    $stmt->bind_param("iiid", $order_id, $product_id, $quantity, $price);
+                    $stmt = $conn->prepare("SELECT id, name, price, stock FROM products WHERE id = ? FOR UPDATE");
+                    $stmt->bind_param("i", $pid);
                     $stmt->execute();
+                    $prod = $stmt->get_result()->fetch_assoc();
+                    $stmt->close();
+
+                    if (!$prod) {
+                        throw new RuntimeException("One of the products in your cart is no longer available.");
+                    }
+                    if (intval($prod['stock']) < $qty) {
+                        throw new RuntimeException('Insufficient stock for "' . $prod['name'] . '" (only ' . intval($prod['stock']) . ' left).');
+                    }
+
+                    $line_total = floatval($prod['price']) * $qty;
+                    $total_amount += $line_total;
+                    $validated_lines[] = [
+                        'product_id' => $pid,
+                        'quantity' => $qty,
+                        'price' => floatval($prod['price']),
+                    ];
                 }
+
+                if (empty($validated_lines)) {
+                    throw new RuntimeException("No valid items in your cart.");
+                }
+
+                $stmt_order = $conn->prepare("INSERT INTO orders (user_id, total_amount, address, payment_code, payment_method, status) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmt_order->bind_param("idsiss", $user_id, $total_amount, $shipping_address, $payment_code, $payment_method, $initial_status);
+                if (!$stmt_order->execute()) {
+                    throw new RuntimeException("Failed to create order.");
+                }
+                $order_id = $stmt_order->insert_id;
+                $stmt_order->close();
+
+                $stmt_item = $conn->prepare("INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)");
+                $stmt_stock = $conn->prepare("UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?");
+
+                foreach ($validated_lines as $line) {
+                    $stmt_item->bind_param("iiid", $order_id, $line['product_id'], $line['quantity'], $line['price']);
+                    if (!$stmt_item->execute()) {
+                        throw new RuntimeException("Failed to save order item.");
+                    }
+                    $stmt_stock->bind_param("iii", $line['quantity'], $line['product_id'], $line['quantity']);
+                    $stmt_stock->execute();
+                    if ($stmt_stock->affected_rows !== 1) {
+                        throw new RuntimeException("Stock changed while placing order. Please try again.");
+                    }
+                }
+                $stmt_item->close();
+                $stmt_stock->close();
+
+                $conn->commit();
+
+                $_SESSION['order_id'] = $order_id;
+                $_SESSION['total_amount'] = $total_amount;
+                $_SESSION['cart'] = [];
+
+                if ($payment_method === 'cash_on_delivery') {
+                    set_flash('success', 'Order #' . $order_id . ' placed with Cash on Delivery!');
+                    header("Location: order-history.php");
+                } else {
+                    header("Location: payment.php?order_id=" . $order_id);
+                }
+                exit();
+            } catch (Throwable $ex) {
+                $conn->rollback();
+                $checkout_error = $ex->getMessage();
             }
-
-            $sql = "UPDATE orders SET total_amount = ? WHERE id = ?";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("di", $total_amount, $order_id);
-            $stmt->execute();
-
-            $_SESSION['order_id'] = $order_id;
-            $_SESSION['total_amount'] = $total_amount;
-
-            $_SESSION['cart'] = [];
-            header("Location: order-history.php");
-            exit;
         }
     }
 }
@@ -75,9 +112,9 @@ $total_amount = 0;
 $total_units = 0;
 if (!empty($cart_items)) {
     foreach ($cart_items as $product_id => $item) {
-        $sql = "SELECT * FROM products WHERE id = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("i", $product_id);
+        $pid = intval($product_id);
+        $stmt = $conn->prepare("SELECT * FROM products WHERE id = ? LIMIT 1");
+        $stmt->bind_param("i", $pid);
         $stmt->execute();
         $result = $stmt->get_result();
 
@@ -146,6 +183,7 @@ if (!empty($cart_items)) {
                     <?php endif; ?>
                 </a>
                 <a href="order-history.php">Orders</a>
+                <a href="account.php">Account</a>
                 <a href="logout.php" class="nav-logout">Logout</a>
             </nav>
         </div>
@@ -156,14 +194,14 @@ if (!empty($cart_items)) {
             <div>
                 <div class="page-eyebrow">Final Step</div>
                 <h1 class="page-title">Checkout</h1>
-                <p class="page-subtitle">Choose your preferred payment method to place your order.</p>
+                <p class="page-subtitle">Enter your delivery address and select how you would like to pay.</p>
             </div>
             <a href="shopping-cart.php" class="btn btn-secondary">Back to Cart</a>
         </div>
 
-        <?php if (!empty($checkout_error)): ?>
+        <?php if ($checkout_error !== ''): ?>
             <div class="alert-banner alert-banner--error" role="alert">
-                <span><?php echo htmlspecialchars($checkout_error); ?></span>
+                <span><?php echo e($checkout_error); ?></span>
             </div>
         <?php endif; ?>
 
@@ -177,23 +215,30 @@ if (!empty($cart_items)) {
             <div class="split-layout">
                 <section class="surface-card">
                     <div class="surface-card-header">
-                        <h2 class="surface-card-title">Payment Method</h2>
+                        <h2 class="surface-card-title">Shipping &amp; Payment</h2>
                     </div>
                     <div class="surface-card-body">
                         <form action="checkout.php" method="POST">
+                            <?php echo csrf_field(); ?>
+                            <div class="form-group">
+                                <label class="form-label" for="address">Shipping Address</label>
+                                <textarea class="form-textarea" id="address" name="address" required minlength="5" placeholder="Street address, district, city, postal code..."><?php echo e($shipping_address); ?></textarea>
+                            </div>
+
+                            <label class="form-label">Payment Method</label>
                             <div class="payment-options">
                                 <label class="payment-option">
                                     <input type="radio" name="payment_method" value="bank_transfer" checked required>
                                     <span>
                                         <span class="payment-option-title">Bank Transfer</span>
-                                        <span class="payment-option-desc">Transfer directly from your bank account.</span>
+                                        <span class="payment-option-desc">Transfer with a unique 3-digit verification code.</span>
                                     </span>
                                 </label>
                                 <label class="payment-option">
                                     <input type="radio" name="payment_method" value="credit_card" required>
                                     <span>
                                         <span class="payment-option-title">Credit Card</span>
-                                        <span class="payment-option-desc">Pay securely using Visa or Mastercard.</span>
+                                        <span class="payment-option-desc">Complete payment via verified reference code.</span>
                                     </span>
                                 </label>
                                 <label class="payment-option">
@@ -204,7 +249,7 @@ if (!empty($cart_items)) {
                                     </span>
                                 </label>
                             </div>
-                            <button type="submit" class="btn btn-primary btn-lg btn-block">Place Order &middot; Rp <?php echo number_format($total_amount, 0, ',', '.'); ?></button>
+                            <button type="submit" class="btn btn-primary btn-lg btn-block">Place Order &middot; <?php echo format_idr($total_amount); ?></button>
                         </form>
                     </div>
                 </section>
@@ -213,13 +258,13 @@ if (!empty($cart_items)) {
                     <h2 class="summary-title">Order Summary (<?php echo $total_units; ?>)</h2>
                     <?php foreach ($display_items as $item): ?>
                         <div class="summary-line">
-                            <span><?php echo htmlspecialchars($item['name']); ?> &times; <?php echo $item['quantity']; ?></span>
-                            <span class="tabular-nums">Rp <?php echo number_format($item['line_total'], 0, ',', '.'); ?></span>
+                            <span><?php echo e($item['name']); ?> &times; <?php echo $item['quantity']; ?></span>
+                            <span class="tabular-nums"><?php echo format_idr($item['line_total']); ?></span>
                         </div>
                     <?php endforeach; ?>
                     <div class="summary-total">
                         <span>Total</span>
-                        <span class="summary-total-amount">Rp <?php echo number_format($total_amount, 0, ',', '.'); ?></span>
+                        <span class="summary-total-amount"><?php echo format_idr($total_amount); ?></span>
                     </div>
                 </aside>
             </div>
@@ -237,7 +282,3 @@ if (!empty($cart_items)) {
 </body>
 
 </html>
-
-<?php
-$conn->close();
-?>

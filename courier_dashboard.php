@@ -1,56 +1,53 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'courier') {
-    header("Location: index.php");
-    exit();
-}
-
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-// Proses perubahan status
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
-    if (isset($_POST['order_id']) && isset($_POST['new_status'])) {
-        $order_id = intval($_POST['order_id']);
-        $new_status = $_POST['new_status'];
-
-        $stmt = $conn->prepare("UPDATE orders SET status = ? WHERE id = ?");
-        $stmt->bind_param("si", $new_status, $order_id);
-        if ($stmt->execute()) {
-            header("Location: courier_dashboard.php");
-            exit();
-        } else {
-            echo "Error updating record: " . mysqli_error($conn);
-        }
-    }
-}
+require_once __DIR__ . '/includes/bootstrap.php';
 
 if (isset($_GET['logout'])) {
+    session_unset();
     session_destroy();
     header("Location: index.php");
     exit();
 }
 
-$query = "SELECT * FROM orders WHERE status IN ('Siap Dikirim', 'Dikirim') ORDER BY created_at DESC";
-$result = mysqli_query($conn, $query);
+require_role('courier');
+$conn = db();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_status'])) {
+    if (!verify_csrf()) {
+        set_flash('error', 'Invalid security token.');
+        header("Location: courier_dashboard.php");
+        exit();
+    }
+
+    $order_id = intval($_POST['order_id'] ?? 0);
+    $new_status = trim($_POST['new_status'] ?? '');
+
+    if ($order_id > 0 && in_array($new_status, ['Dikirim', 'Sampai Tujuan'], true)) {
+        $expected_prev = $new_status === 'Dikirim' ? 'Siap Dikirim' : 'Dikirim';
+        $stmt = $conn->prepare("UPDATE orders SET status = ? WHERE id = ? AND status = ?");
+        $stmt->bind_param("sis", $new_status, $order_id, $expected_prev);
+        $stmt->execute();
+        if ($stmt->affected_rows > 0) {
+            set_flash('success', 'Order #' . $order_id . ' updated to ' . $new_status . '.');
+        }
+        $stmt->close();
+    }
+    header("Location: courier_dashboard.php");
+    exit();
+}
+
+$result = $conn->query("SELECT * FROM orders WHERE status IN ('Siap Dikirim', 'Dikirim') ORDER BY created_at DESC");
 
 $orders = [];
 $ready_count = 0;
 $in_transit_count = 0;
 if ($result) {
-    while ($row = mysqli_fetch_assoc($result)) {
+    while ($row = $result->fetch_assoc()) {
         $orders[] = $row;
         if ($row['status'] === 'Siap Dikirim') $ready_count++;
         if ($row['status'] === 'Dikirim') $in_transit_count++;
     }
 }
+$flash = get_flash();
 ?>
 
 <!DOCTYPE html>
@@ -67,6 +64,12 @@ if ($result) {
 </head>
 
 <body>
+    <?php if ($flash): ?>
+        <div class="toast-banner toast-banner--<?php echo e($flash['type']); ?>" data-toast role="status">
+            <?php echo e($flash['message']); ?>
+        </div>
+    <?php endif; ?>
+
     <header class="site-header">
         <div class="header-inner">
             <a href="courier_dashboard.php" class="brand-link">
@@ -84,10 +87,19 @@ if ($result) {
                 </span>
             </a>
 
-            <div style="display:flex;align-items:center;gap:12px;">
-                <span class="role-chip"><span class="role-chip-dot"></span> Courier</span>
-                <a href="?logout=true" class="btn btn-danger btn-sm">Logout</a>
-            </div>
+            <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+
+            <nav class="nav-links" data-nav-links aria-label="Courier navigation">
+                <a href="courier_dashboard.php" class="active">Deliveries</a>
+                <a href="account.php">Account</a>
+                <a href="?logout=true" class="nav-logout">Logout</a>
+            </nav>
         </div>
     </header>
 
@@ -98,6 +110,7 @@ if ($result) {
                 <h1 class="page-title">Courier Dashboard</h1>
                 <p class="page-subtitle">Pick up ready packages and confirm delivery at the destination.</p>
             </div>
+            <span class="role-chip"><span class="role-chip-dot"></span> Courier</span>
         </div>
 
         <section class="kpi-grid kpi-grid--2" aria-label="Delivery summary">
@@ -145,24 +158,26 @@ if ($result) {
                             <?php foreach ($orders as $row): ?>
                                 <tr>
                                     <td><strong>#<?php echo intval($row['id']); ?></strong></td>
-                                    <td style="color:var(--ink-secondary);"><?php echo htmlspecialchars($row['address'] ?: 'Standard delivery'); ?></td>
+                                    <td style="color:var(--ink-secondary);"><?php echo e($row['address'] ?: 'Standard delivery'); ?></td>
                                     <td>
-                                        <span class="badge-pill <?php echo $row['status'] === 'Siap Dikirim' ? 'badge-warning' : 'badge-info'; ?>">
-                                            <?php echo htmlspecialchars($row['status']); ?>
+                                        <span class="badge-pill <?php echo status_badge_class($row['status']); ?>">
+                                            <?php echo e($row['status']); ?>
                                         </span>
                                     </td>
                                     <td class="text-right">
-                                        <?php if ($row['status'] == 'Siap Dikirim'): ?>
+                                        <?php if ($row['status'] === 'Siap Dikirim'): ?>
                                             <form method="POST" style="margin:0;display:inline;">
+                                                <?php echo csrf_field(); ?>
                                                 <input type="hidden" name="order_id" value="<?php echo intval($row['id']); ?>">
                                                 <input type="hidden" name="new_status" value="Dikirim">
-                                                <button type="submit" name="update_status" class="btn btn-primary btn-sm">Start Delivery (Dikirim)</button>
+                                                <button type="submit" name="update_status" value="1" class="btn btn-primary btn-sm">Start Delivery (Dikirim)</button>
                                             </form>
-                                        <?php elseif ($row['status'] == 'Dikirim'): ?>
+                                        <?php elseif ($row['status'] === 'Dikirim'): ?>
                                             <form method="POST" style="margin:0;display:inline;">
+                                                <?php echo csrf_field(); ?>
                                                 <input type="hidden" name="order_id" value="<?php echo intval($row['id']); ?>">
                                                 <input type="hidden" name="new_status" value="Sampai Tujuan">
-                                                <button type="submit" name="update_status" class="btn btn-success btn-sm">Mark Arrived (Sampai Tujuan)</button>
+                                                <button type="submit" name="update_status" value="1" class="btn btn-success btn-sm">Mark Arrived (Sampai Tujuan)</button>
                                             </form>
                                         <?php endif; ?>
                                     </td>
@@ -191,7 +206,3 @@ if ($result) {
 </body>
 
 </html>
-
-<?php
-$conn->close();
-?>

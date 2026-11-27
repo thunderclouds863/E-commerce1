@@ -1,33 +1,11 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'customer') {
-    header("Location: index.php");
-    exit;
-}
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('customer');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = db();
 
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-if (!isset($_SESSION['cart'])) {
+if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
-}
-
-// Handle add to cart
-if (isset($_GET['add_to_cart'])) {
-    $product_id = intval($_GET['add_to_cart']);
-    if ($product_id > 0) {
-        if (!isset($_SESSION['cart'][$product_id])) {
-            $_SESSION['cart'][$product_id] = ['quantity' => 0];
-        }
-        $_SESSION['cart'][$product_id]['quantity']++;
-    }
 }
 
 // Handle remove from cart
@@ -35,21 +13,55 @@ if (isset($_GET['remove_from_cart'])) {
     $product_id = intval($_GET['remove_from_cart']);
     if (isset($_SESSION['cart'][$product_id])) {
         unset($_SESSION['cart'][$product_id]);
+        set_flash('success', 'Item removed from your cart.');
     }
+    header("Location: shopping-cart.php");
+    exit();
 }
 
 // Handle quantity change
-if (isset($_POST['update_quantity']) || isset($_POST['quantity'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['update_quantity']) || isset($_POST['quantity']))) {
+    if (!verify_csrf()) {
+        set_flash('error', 'Invalid request token. Please try again.');
+        header("Location: shopping-cart.php");
+        exit();
+    }
+
     if (isset($_POST['quantity']) && is_array($_POST['quantity'])) {
+        $adjusted = false;
         foreach ($_POST['quantity'] as $product_id => $quantity) {
-            if (isset($_SESSION['cart'][$product_id])) {
-                $quantity = intval($quantity);
-                if ($quantity > 0) {
-                    $_SESSION['cart'][$product_id]['quantity'] = $quantity;
-                }
+            $pid = intval($product_id);
+            $qty = intval($quantity);
+            if (!isset($_SESSION['cart'][$pid])) {
+                continue;
+            }
+            if ($qty <= 0) {
+                unset($_SESSION['cart'][$pid]);
+                continue;
+            }
+            $stmt = $conn->prepare("SELECT name, stock FROM products WHERE id = ? LIMIT 1");
+            $stmt->bind_param("i", $pid);
+            $stmt->execute();
+            $prod = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            if (!$prod || intval($prod['stock']) <= 0) {
+                unset($_SESSION['cart'][$pid]);
+                $adjusted = true;
+            } elseif ($qty > intval($prod['stock'])) {
+                $_SESSION['cart'][$pid]['quantity'] = intval($prod['stock']);
+                set_flash('error', 'Adjusted "' . $prod['name'] . '" quantity to available stock (' . intval($prod['stock']) . ').');
+                $adjusted = true;
+            } else {
+                $_SESSION['cart'][$pid]['quantity'] = $qty;
             }
         }
+        if (!$adjusted) {
+            set_flash('success', 'Cart quantities updated.');
+        }
     }
+    header("Location: shopping-cart.php");
+    exit();
 }
 
 // Build cart display items
@@ -58,41 +70,47 @@ $subtotal = 0;
 $total_units = 0;
 
 foreach ($_SESSION['cart'] as $product_id => $item) {
-    if ($product_id <= 0) {
+    $pid = intval($product_id);
+    if ($pid <= 0 || !is_array($item) || !isset($item['quantity'])) {
         unset($_SESSION['cart'][$product_id]);
         continue;
     }
-    if (is_array($item) && isset($item['quantity'])) {
-        $stmt = $conn->prepare("SELECT * FROM products WHERE id = ?");
-        $stmt->bind_param("i", $product_id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        if ($res && $res->num_rows > 0) {
-            $product = $res->fetch_assoc();
-            $qty = intval($item['quantity']);
-            $line_total = $product['price'] * $qty;
-            $subtotal += $line_total;
-            $total_units += $qty;
 
-            $imgSrc = '';
-            if (!empty($product['image']) && is_string($product['image']) && file_exists($product['image'])) {
-                $imgSrc = $product['image'];
-            } elseif (file_exists('uploads/produk' . $product['id'] . '.png')) {
-                $imgSrc = 'uploads/produk' . $product['id'] . '.png';
-            }
+    $stmt = $conn->prepare("SELECT * FROM products WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $pid);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    if ($res && $res->num_rows > 0) {
+        $product = $res->fetch_assoc();
+        $stock = intval($product['stock']);
+        $qty = min(max(1, intval($item['quantity'])), max(1, $stock));
+        $line_total = $product['price'] * $qty;
+        $subtotal += $line_total;
+        $total_units += $qty;
 
-            $cart_display[] = [
-                'id' => $product_id,
-                'name' => $product['name'],
-                'price' => $product['price'],
-                'quantity' => $qty,
-                'line_total' => $line_total,
-                'image' => $imgSrc,
-            ];
+        $imgSrc = '';
+        if (!empty($product['image']) && is_string($product['image']) && file_exists($product['image'])) {
+            $imgSrc = $product['image'];
+        } elseif (file_exists('uploads/produk' . $product['id'] . '.png')) {
+            $imgSrc = 'uploads/produk' . $product['id'] . '.png';
         }
-        $stmt->close();
+
+        $cart_display[] = [
+            'id' => $pid,
+            'name' => $product['name'],
+            'price' => $product['price'],
+            'stock' => $stock,
+            'quantity' => $qty,
+            'line_total' => $line_total,
+            'image' => $imgSrc,
+        ];
+    } else {
+        unset($_SESSION['cart'][$product_id]);
     }
+    $stmt->close();
 }
+
+$flash = get_flash();
 ?>
 
 <!DOCTYPE html>
@@ -109,6 +127,12 @@ foreach ($_SESSION['cart'] as $product_id => $item) {
 </head>
 
 <body>
+    <?php if ($flash): ?>
+        <div class="toast-banner toast-banner--<?php echo e($flash['type']); ?>" data-toast role="status">
+            <?php echo e($flash['message']); ?>
+        </div>
+    <?php endif; ?>
+
     <header class="site-header">
         <div class="header-inner">
             <a href="customer_dashboard.php" class="brand-link">
@@ -142,6 +166,7 @@ foreach ($_SESSION['cart'] as $product_id => $item) {
                     <?php endif; ?>
                 </a>
                 <a href="order-history.php">Orders</a>
+                <a href="account.php">Account</a>
                 <a href="logout.php" class="nav-logout">Logout</a>
             </nav>
         </div>
@@ -176,26 +201,29 @@ foreach ($_SESSION['cart'] as $product_id => $item) {
                     <?php foreach ($cart_display as $item): ?>
                         <div class="cart-row">
                             <?php if ($item['image'] !== ''): ?>
-                                <img class="cart-row-img" src="<?php echo htmlspecialchars($item['image']); ?>" alt="<?php echo htmlspecialchars($item['name']); ?>">
+                                <img class="cart-row-img" src="<?php echo e($item['image']); ?>" alt="<?php echo e($item['name']); ?>">
                             <?php else: ?>
                                 <div class="cart-row-img" style="display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:12px;">No img</div>
                             <?php endif; ?>
 
                             <div class="cart-row-info">
-                                <div class="cart-row-title"><?php echo htmlspecialchars($item['name']); ?></div>
+                                <div class="cart-row-title"><?php echo e($item['name']); ?></div>
                                 <div class="cart-row-unit tabular-nums">
-                                    Rp <?php echo number_format($item['price'], 0, ',', '.'); ?> each
+                                    <?php echo format_idr($item['price']); ?> each
                                     &middot;
-                                    <strong>Rp <?php echo number_format($item['line_total'], 0, ',', '.'); ?></strong>
+                                    <strong><?php echo format_idr($item['line_total']); ?></strong>
+                                    &middot;
+                                    <span style="color:var(--ink-muted);"><?php echo $item['stock']; ?> available</span>
                                 </div>
                             </div>
 
                             <div class="cart-row-controls">
                                 <form action="shopping-cart.php" method="POST" style="display:inline-flex;align-items:center;gap:8px;margin:0;">
+                                    <?php echo csrf_field(); ?>
                                     <input type="hidden" name="update_quantity" value="1">
                                     <input class="form-control qty-input" type="number" name="quantity[<?php echo $item['id']; ?>]"
-                                           value="<?php echo $item['quantity']; ?>" min="1" max="99"
-                                           aria-label="Quantity for <?php echo htmlspecialchars($item['name']); ?>"
+                                           value="<?php echo $item['quantity']; ?>" min="1" max="<?php echo max(1, $item['stock']); ?>"
+                                           aria-label="Quantity for <?php echo e($item['name']); ?>"
                                            onchange="this.form.submit()">
                                 </form>
                                 <a href="shopping-cart.php?remove_from_cart=<?php echo $item['id']; ?>"
@@ -210,15 +238,15 @@ foreach ($_SESSION['cart'] as $product_id => $item) {
                     <h2 class="summary-title">Order Summary</h2>
                     <div class="summary-line">
                         <span>Items (<?php echo $total_units; ?>)</span>
-                        <span class="tabular-nums">Rp <?php echo number_format($subtotal, 0, ',', '.'); ?></span>
+                        <span class="tabular-nums"><?php echo format_idr($subtotal); ?></span>
                     </div>
                     <div class="summary-line">
                         <span>Shipping</span>
-                        <span>Calculated at checkout</span>
+                        <span>Free standard delivery</span>
                     </div>
                     <div class="summary-total">
                         <span>Total</span>
-                        <span class="summary-total-amount">Rp <?php echo number_format($subtotal, 0, ',', '.'); ?></span>
+                        <span class="summary-total-amount"><?php echo format_idr($subtotal); ?></span>
                     </div>
                     <a href="checkout.php" class="btn btn-primary btn-lg btn-block" style="margin-top:20px;">Proceed to Checkout</a>
                 </aside>
@@ -237,7 +265,3 @@ foreach ($_SESSION['cart'] as $product_id => $item) {
 </body>
 
 </html>
-
-<?php
-$conn->close();
-?>
