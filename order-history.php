@@ -103,7 +103,7 @@ $flash = get_flash();
         <section class="surface-card">
             <?php if ($orders_result->num_rows > 0): ?>
                 <div class="table-wrap">
-                    <table class="data-table">
+                    <table class="data-table data-table--responsive">
                         <thead>
                             <tr>
                                 <th>Order</th>
@@ -116,15 +116,15 @@ $flash = get_flash();
                         <tbody>
                             <?php while ($order = $orders_result->fetch_assoc()): ?>
                                 <tr>
-                                    <td><strong>#<?php echo intval($order['id']); ?></strong></td>
-                                    <td class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($order['created_at'])); ?></td>
-                                    <td class="tabular-nums"><strong><?php echo format_idr($order['total_amount']); ?></strong></td>
-                                    <td>
+                                    <td data-label="Order"><strong>#<?php echo intval($order['id']); ?></strong></td>
+                                    <td data-label="Date" class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($order['created_at'])); ?></td>
+                                    <td data-label="Total" class="tabular-nums"><strong><?php echo format_idr($order['total_amount']); ?></strong></td>
+                                    <td data-label="Status">
                                         <span class="badge-pill <?php echo status_badge_class($order['status']); ?>">
                                             <?php echo e(ucfirst($order['status'])); ?>
                                         </span>
                                     </td>
-                                    <td class="text-right">
+                                    <td data-actions="true" class="text-right">
                                         <div class="action-group" style="justify-content:flex-end;">
                                             <?php if (strtolower($order['status']) === 'awaiting payment'): ?>
                                                 <a href="payment.php?order_id=<?php echo intval($order['id']); ?>" class="btn btn-primary btn-sm">Pay Now</a>

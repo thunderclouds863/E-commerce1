@@ -152,11 +152,11 @@ $cart_count = cart_total_units();
                     <div class="meta-tile-label">Payment</div>
                     <div class="meta-tile-value"><?php echo e($paymentLabel); ?></div>
                 </div>
-                <div class="meta-tile">
+                <div class="meta-tile meta-tile--wide">
                     <div class="meta-tile-label">Shipping Address</div>
                     <div class="meta-tile-value"><?php echo e($order['address'] ?: 'Not specified'); ?></div>
                 </div>
-                <div class="meta-tile">
+                <div class="meta-tile meta-tile--wide">
                     <div class="meta-tile-label">Total</div>
                     <div class="meta-tile-value tabular-nums"><?php echo format_idr($order['total_amount']); ?></div>
                 </div>
@@ -167,7 +167,7 @@ $cart_count = cart_total_units();
                     <h2 class="surface-card-title">Ordered Items</h2>
                 </div>
                 <div class="table-wrap">
-                    <table class="data-table">
+                    <table class="data-table data-table--responsive">
                         <thead>
                             <tr>
                                 <th>Product</th>
@@ -185,10 +185,10 @@ $cart_count = cart_total_units();
                                 $total_order_amount += $total_product_price;
                             ?>
                                 <tr>
-                                    <td><strong><?php echo e($item['product_name']); ?></strong></td>
-                                    <td class="text-center tabular-nums"><?php echo intval($item['quantity']); ?></td>
-                                    <td class="text-right tabular-nums"><?php echo format_idr($unit_price); ?></td>
-                                    <td class="text-right tabular-nums"><strong><?php echo format_idr($total_product_price); ?></strong></td>
+                                    <td data-primary="true"><strong><?php echo e($item['product_name']); ?></strong></td>
+                                    <td data-label="Qty" class="text-center tabular-nums"><?php echo intval($item['quantity']); ?></td>
+                                    <td data-label="Unit Price" class="text-right tabular-nums"><?php echo format_idr($unit_price); ?></td>
+                                    <td data-label="Subtotal" class="text-right tabular-nums"><strong><?php echo format_idr($total_product_price); ?></strong></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

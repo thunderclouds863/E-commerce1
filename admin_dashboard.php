@@ -195,7 +195,7 @@ $flash = get_flash();
 
       <?php if ($pending_count > 0): ?>
         <div class="table-wrap">
-          <table class="data-table">
+          <table class="data-table data-table--responsive">
             <thead>
               <tr>
                 <th>ID</th>
@@ -207,10 +207,10 @@ $flash = get_flash();
             <tbody>
               <?php while ($user = $pending_users->fetch_assoc()): ?>
                 <tr>
-                  <td class="tabular-nums">#<?php echo intval($user['id']); ?></td>
-                  <td><strong><?php echo e($user['username']); ?></strong></td>
-                  <td><span class="badge-pill badge-neutral"><?php echo e(ucfirst($user['role'])); ?></span></td>
-                  <td class="text-right">
+                  <td class="tabular-nums" data-label="ID">#<?php echo intval($user['id']); ?></td>
+                  <td data-label="Username"><strong><?php echo e($user['username']); ?></strong></td>
+                  <td data-label="Role"><span class="badge-pill badge-neutral"><?php echo e(ucfirst($user['role'])); ?></span></td>
+                  <td class="text-right" data-actions="true">
                     <div class="action-group" style="justify-content:flex-end;">
                       <form method="POST" style="margin:0;">
                         <?php echo csrf_field(); ?>

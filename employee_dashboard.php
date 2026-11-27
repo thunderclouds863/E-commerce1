@@ -142,7 +142,7 @@ $flash = get_flash();
 
             <?php if (count($orders) > 0): ?>
                 <div class="table-wrap">
-                    <table class="data-table">
+                    <table class="data-table data-table--responsive">
                         <thead>
                             <tr>
                                 <th>Order ID</th>
@@ -153,13 +153,13 @@ $flash = get_flash();
                         <tbody>
                             <?php foreach ($orders as $row): ?>
                                 <tr>
-                                    <td><strong>#<?php echo intval($row['id']); ?></strong></td>
-                                    <td>
+                                    <td data-label="Order"><strong>#<?php echo intval($row['id']); ?></strong></td>
+                                    <td data-label="Status">
                                         <span class="badge-pill <?php echo status_badge_class($row['status']); ?>">
                                             <?php echo e($row['status']); ?>
                                         </span>
                                     </td>
-                                    <td class="text-right">
+                                    <td data-actions="true" class="text-right">
                                         <?php if ($row['status'] === 'Dikonfirmasi'): ?>
                                             <form method="POST" style="margin:0;display:inline;">
                                                 <?php echo csrf_field(); ?>

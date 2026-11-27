@@ -108,7 +108,7 @@ $flash = get_flash();
 
       <?php if ($result && $result->num_rows > 0): ?>
         <div class="table-wrap">
-          <table class="data-table">
+          <table class="data-table data-table--responsive">
             <thead>
               <tr>
                 <th>Order ID</th>
@@ -125,16 +125,16 @@ $flash = get_flash();
                 $canConfirm = ($st === 'pending' || $st === 'paid');
               ?>
                 <tr>
-                  <td><strong>#<?php echo intval($row['id']); ?></strong></td>
-                  <td><?php echo e($row['username']); ?></td>
-                  <td class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($row['created_at'])); ?></td>
-                  <td class="text-right tabular-nums"><strong><?php echo format_idr($row['total_amount']); ?></strong></td>
-                  <td>
+                  <td data-label="Order"><strong>#<?php echo intval($row['id']); ?></strong></td>
+                  <td data-label="Customer"><?php echo e($row['username']); ?></td>
+                  <td data-label="Date" class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($row['created_at'])); ?></td>
+                  <td data-label="Total" class="text-right tabular-nums"><strong><?php echo format_idr($row['total_amount']); ?></strong></td>
+                  <td data-label="Status">
                     <span class="badge-pill <?php echo status_badge_class($row['status']); ?>">
                       <?php echo e(ucfirst($row['status'])); ?>
                     </span>
                   </td>
-                  <td class="text-right">
+                  <td data-actions="true" class="text-right">
                     <?php if ($canConfirm): ?>
                       <form method="POST" style="margin:0;display:inline;">
                         <?php echo csrf_field(); ?>
@@ -142,7 +142,7 @@ $flash = get_flash();
                         <button type="submit" class="btn btn-success btn-sm">Confirm Order</button>
                       </form>
                     <?php else: ?>
-                      <span style="font-size:12.5px;color:var(--ink-muted);">—</span>
+                      <span style="font-size:12.5px;color:var(--ink-muted);">No action needed</span>
                     <?php endif; ?>
                   </td>
                 </tr>
