@@ -1,57 +1,39 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('customer');
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'customer') {
-    header("Location: index.php");
-    exit;
+$conn = db();
+$user_id = intval($_SESSION['user_id']);
+
+$order_id = 0;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!verify_csrf()) {
+        set_flash('error', 'Invalid security token. Please try again.');
+        header("Location: order-history.php");
+        exit();
+    }
+    $order_id = intval($_POST['order_id'] ?? 0);
+} elseif (isset($_GET['order_id'])) {
+    $order_id = intval($_GET['order_id']);
 }
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
-
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-if (isset($_GET['order_id'])) {
-    $order_id = $_GET['order_id'];
-
-    // Update order status to "paid"
-    $sql = "UPDATE orders SET status = 'paid' WHERE id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $order_id);
+if ($order_id > 0) {
+    $stmt = $conn->prepare("UPDATE orders SET status = 'paid' WHERE id = ? AND user_id = ? AND status IN ('awaiting payment', 'Pending')");
+    $stmt->bind_param("ii", $order_id, $user_id);
     $stmt->execute();
+    $updated = $stmt->affected_rows > 0;
+    $stmt->close();
 
-    // Clear session order data
-    unset($_SESSION['order_id']);
-    unset($_SESSION['total_amount']);
+    unset($_SESSION['order_id'], $_SESSION['total_amount']);
 
-    echo "<script>alert('Thank you! Your payment has been confirmed.'); window.location.href = 'order-history.php';</script>";
-    exit;
+    if ($updated) {
+        set_flash('success', 'Thank you! Payment for Order #' . $order_id . ' has been confirmed.');
+    } else {
+        set_flash('error', 'Order could not be confirmed or is already paid.');
+    }
 } else {
-    echo "<p>Invalid order ID. Please try again.</p>";
+    set_flash('error', 'Invalid order ID.');
 }
-?>
 
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirm Payment</title>
-</head>
-
-<body>
-    <h1>Invalid Request</h1>
-</body>
-
-</html>
-
-<?php
-$conn->close();
-?>
+header("Location: order-history.php");
+exit();

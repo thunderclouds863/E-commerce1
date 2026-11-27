@@ -1,52 +1,39 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
-  header("Location: index.php");
-  exit();
-}
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('admin');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
+$conn = db();
 
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
-
-// Handle POST Requests for approving, rejecting, and deleting users
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  if (!verify_csrf()) {
+    set_flash('error', 'Invalid security token. Please try again.');
+    header("Location: admin_dashboard.php");
+    exit();
+  }
   if (isset($_POST['action']) && isset($_POST['user_id'])) {
-    $user_id = $_POST['user_id'];
+    $user_id = intval($_POST['user_id']);
     $action = $_POST['action'];
 
     $valid_actions = ['approve_user', 'reject_user', 'delete_user'];
-    if (in_array($action, $valid_actions)) {
-      switch ($action) {
-        case 'approve_user':
-          $sql = "UPDATE users SET status = ? WHERE id = ?";
-          $stmt = $conn->prepare($sql);
-          $status = 'actived';
-          $stmt->bind_param("si", $status, $user_id);
-          $stmt->execute();
-          break;
-
-        case 'reject_user':
-          $sql = "UPDATE users SET status = ? WHERE id = ?";
-          $stmt = $conn->prepare($sql);
-          $status = 'rejected';
-          $stmt->bind_param("si", $status, $user_id);
-          $stmt->execute();
-          break;
-
-        case 'delete_user':
-          $sql = "DELETE FROM users WHERE id = ?";
-          $stmt = $conn->prepare($sql);
-          $stmt->bind_param("i", $user_id);
-          $stmt->execute();
-          break;
+    if (in_array($action, $valid_actions, true)) {
+      if ($action === 'approve_user') {
+        $stmt = $conn->prepare("UPDATE users SET status = 'actived' WHERE id = ?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $stmt->close();
+        set_flash('success', 'User account approved.');
+      } elseif ($action === 'reject_user') {
+        $stmt = $conn->prepare("UPDATE users SET status = 'rejected' WHERE id = ?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $stmt->close();
+        set_flash('success', 'User registration rejected.');
+      } elseif ($action === 'delete_user') {
+        $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $stmt->close();
+        set_flash('success', 'User deleted.');
       }
       header("Location: admin_dashboard.php");
       exit();
@@ -54,18 +41,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
   }
 }
 
-// Fetch summary counts & pending users
-$pending_users = $conn->query("SELECT * FROM users WHERE status = 'pending'");
-$customers = $conn->query("SELECT * FROM users WHERE role = 'customer' AND status = 'actived'");
-$employees = $conn->query("SELECT * FROM users WHERE role = 'employee' AND status = 'actived'");
-$couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status = 'actived'");
+$pending_users = $conn->query("SELECT * FROM users WHERE status = 'pending' ORDER BY id DESC");
+$customers = $conn->query("SELECT COUNT(*) AS cnt FROM users WHERE role = 'customer' AND status = 'actived'");
+$employees = $conn->query("SELECT COUNT(*) AS cnt FROM users WHERE role = 'employee' AND status = 'actived'");
+$couriers = $conn->query("SELECT COUNT(*) AS cnt FROM users WHERE role = 'courier' AND status = 'actived'");
 $products_res = $conn->query("SELECT COUNT(*) AS cnt FROM products");
 $orders_res = $conn->query("SELECT COUNT(*) AS cnt FROM orders");
 
 $pending_count = $pending_users ? $pending_users->num_rows : 0;
-$active_users_count = ($customers ? $customers->num_rows : 0) + ($employees ? $employees->num_rows : 0) + ($couriers ? $couriers->num_rows : 0);
+$active_users_count = ($customers ? intval($customers->fetch_assoc()['cnt']) : 0)
+  + ($employees ? intval($employees->fetch_assoc()['cnt']) : 0)
+  + ($couriers ? intval($couriers->fetch_assoc()['cnt']) : 0);
 $products_count = $products_res ? intval($products_res->fetch_assoc()['cnt']) : 0;
 $orders_count = $orders_res ? intval($orders_res->fetch_assoc()['cnt']) : 0;
+$flash = get_flash();
 ?>
 
 <!DOCTYPE html>
@@ -82,6 +71,12 @@ $orders_count = $orders_res ? intval($orders_res->fetch_assoc()['cnt']) : 0;
 </head>
 
 <body>
+  <?php if ($flash): ?>
+    <div class="toast-banner toast-banner--<?php echo e($flash['type']); ?>" data-toast role="status">
+      <?php echo e($flash['message']); ?>
+    </div>
+  <?php endif; ?>
+
   <header class="site-header">
     <div class="header-inner">
       <a href="admin_dashboard.php" class="brand-link">
@@ -213,15 +208,17 @@ $orders_count = $orders_res ? intval($orders_res->fetch_assoc()['cnt']) : 0;
               <?php while ($user = $pending_users->fetch_assoc()): ?>
                 <tr>
                   <td class="tabular-nums">#<?php echo intval($user['id']); ?></td>
-                  <td><strong><?php echo htmlspecialchars($user['username']); ?></strong></td>
-                  <td><span class="badge-pill badge-neutral"><?php echo htmlspecialchars(ucfirst($user['role'])); ?></span></td>
+                  <td><strong><?php echo e($user['username']); ?></strong></td>
+                  <td><span class="badge-pill badge-neutral"><?php echo e(ucfirst($user['role'])); ?></span></td>
                   <td class="text-right">
                     <div class="action-group" style="justify-content:flex-end;">
                       <form method="POST" style="margin:0;">
+                        <?php echo csrf_field(); ?>
                         <input type="hidden" name="user_id" value="<?php echo intval($user['id']); ?>">
                         <button type="submit" name="action" value="approve_user" class="btn btn-success btn-sm">Approve</button>
                       </form>
                       <form method="POST" style="margin:0;">
+                        <?php echo csrf_field(); ?>
                         <input type="hidden" name="user_id" value="<?php echo intval($user['id']); ?>">
                         <button type="submit" name="action" value="reject_user" class="btn btn-danger btn-sm">Reject</button>
                       </form>
@@ -252,5 +249,3 @@ $orders_count = $orders_res ? intval($orders_res->fetch_assoc()['cnt']) : 0;
 </body>
 
 </html>
-
-<?php $conn->close(); ?>

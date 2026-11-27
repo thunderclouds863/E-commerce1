@@ -1,62 +1,50 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('customer');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
+$conn = db();
 
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-// Initialize cart
-if (!isset($_SESSION['cart'])) {
+if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
 
-$toast_message = '';
-$toast_type = 'success';
-
-// Handle add to cart
-if (isset($_GET['add_to_cart'])) {
-    $product_id = intval($_GET['add_to_cart']);
-
-    // Check stock before adding
-    $stmt = $conn->prepare("SELECT stock FROM products WHERE id = ?");
-    $stmt->bind_param("i", $product_id);
-    $stmt->execute();
-    $stmt->bind_result($stock);
-    $stmt->fetch();
-    $stmt->close();
-
-    if ($stock > 0) {
-        if (isset($_SESSION['cart'][$product_id])) {
-            $_SESSION['cart'][$product_id]['quantity']++;
-        } else {
-            $_SESSION['cart'][$product_id] = ['quantity' => 1];
-        }
-
-        // Decrease stock in the database
-        $stmt = $conn->prepare("UPDATE products SET stock = stock - 1 WHERE id = ?");
-        $stmt->bind_param("i", $product_id);
-        $stmt->execute();
-        $stmt->close();
-
-        $toast_message = 'Product added to your cart.';
-        $toast_type = 'success';
+// Handle add to cart (POST preferred with CSRF; GET kept for backward compatibility)
+$add_id = 0;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_to_cart'])) {
+    if (verify_csrf()) {
+        $add_id = intval($_POST['add_to_cart']);
     } else {
-        $toast_message = 'Sorry, this product is currently out of stock.';
-        $toast_type = 'error';
+        set_flash('error', 'Invalid request token. Please try again.');
+        header("Location: customer_dashboard.php");
+        exit();
     }
+} elseif (isset($_GET['add_to_cart'])) {
+    $add_id = intval($_GET['add_to_cart']);
 }
 
-// Fetch products
-$sql = "SELECT * FROM products";
-$result = $conn->query($sql);
+if ($add_id > 0) {
+    $stmt = $conn->prepare("SELECT id, name, stock FROM products WHERE id = ? LIMIT 1");
+    $stmt->bind_param("i", $add_id);
+    $stmt->execute();
+    $prod = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 
+    if (!$prod) {
+        set_flash('error', 'Product not found.');
+    } else {
+        $current_qty = isset($_SESSION['cart'][$add_id]['quantity']) ? intval($_SESSION['cart'][$add_id]['quantity']) : 0;
+        if ($current_qty + 1 > intval($prod['stock'])) {
+            set_flash('error', 'Cannot add more "' . $prod['name'] . '" — only ' . intval($prod['stock']) . ' in stock.');
+        } else {
+            $_SESSION['cart'][$add_id] = ['quantity' => $current_qty + 1];
+            set_flash('success', '"' . $prod['name'] . '" added to your cart.');
+        }
+    }
+    header("Location: customer_dashboard.php");
+    exit();
+}
+
+$result = $conn->query("SELECT * FROM products ORDER BY id ASC");
 $products = [];
 if ($result) {
     while ($row = $result->fetch_assoc()) {
@@ -64,12 +52,8 @@ if ($result) {
     }
 }
 
-$cart_count = 0;
-foreach ($_SESSION['cart'] as $cItem) {
-    if (is_array($cItem) && isset($cItem['quantity'])) {
-        $cart_count += intval($cItem['quantity']);
-    }
-}
+$flash = get_flash();
+$cart_count = cart_total_units();
 ?>
 
 <!DOCTYPE html>
@@ -86,9 +70,9 @@ foreach ($_SESSION['cart'] as $cItem) {
 </head>
 
 <body>
-    <?php if (!empty($toast_message)): ?>
-        <div class="toast-banner toast-banner--<?php echo $toast_type; ?>" data-toast role="status">
-            <?php echo htmlspecialchars($toast_message); ?>
+    <?php if ($flash): ?>
+        <div class="toast-banner toast-banner--<?php echo e($flash['type']); ?>" data-toast role="status">
+            <?php echo e($flash['message']); ?>
         </div>
     <?php endif; ?>
 
@@ -125,6 +109,7 @@ foreach ($_SESSION['cart'] as $cItem) {
                     <?php endif; ?>
                 </a>
                 <a href="order-history.php">Orders</a>
+                <a href="account.php">Account</a>
                 <a href="logout.php" class="nav-logout">Logout</a>
             </nav>
         </div>
@@ -173,18 +158,19 @@ foreach ($_SESSION['cart'] as $cItem) {
                     } elseif (file_exists('uploads/produk' . $row['id'] . '.png')) {
                         $imgSrc = 'uploads/produk' . $row['id'] . '.png';
                     }
-                    $inStock = intval($row['stock']) > 0;
-                    $lowStock = $inStock && intval($row['stock']) <= 10;
+                    $stock = intval($row['stock']);
+                    $inStock = $stock > 0;
+                    $lowStock = $inStock && $stock <= 10;
                 ?>
                     <article class="product-card"
                              data-product-card
                              data-index="<?php echo $idx; ?>"
-                             data-name="<?php echo htmlspecialchars($row['name']); ?>"
-                             data-desc="<?php echo htmlspecialchars($row['description'] ?? ''); ?>"
+                             data-name="<?php echo e($row['name']); ?>"
+                             data-desc="<?php echo e($row['description'] ?? ''); ?>"
                              data-price="<?php echo floatval($row['price']); ?>">
                         <div class="product-media">
                             <?php if ($imgSrc !== ''): ?>
-                                <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($row['name']); ?>" loading="lazy">
+                                <img src="<?php echo e($imgSrc); ?>" alt="<?php echo e($row['name']); ?>" loading="lazy">
                             <?php else: ?>
                                 <div class="product-media-placeholder">
                                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -199,20 +185,24 @@ foreach ($_SESSION['cart'] as $cItem) {
                             <?php if (!$inStock): ?>
                                 <span class="badge-pill badge-danger product-stock-tag">Out of Stock</span>
                             <?php elseif ($lowStock): ?>
-                                <span class="badge-pill badge-warning product-stock-tag"><?php echo intval($row['stock']); ?> left</span>
+                                <span class="badge-pill badge-warning product-stock-tag"><?php echo $stock; ?> left</span>
                             <?php else: ?>
-                                <span class="badge-pill badge-success product-stock-tag">In Stock · <?php echo intval($row['stock']); ?></span>
+                                <span class="badge-pill badge-success product-stock-tag">In Stock &middot; <?php echo $stock; ?></span>
                             <?php endif; ?>
                         </div>
 
                         <div class="product-body">
-                            <h2 class="product-name"><?php echo htmlspecialchars($row['name']); ?></h2>
-                            <p class="product-desc"><?php echo htmlspecialchars($row['description'] ?: 'Quality everyday product from AS Berkah.'); ?></p>
+                            <h2 class="product-name"><?php echo e($row['name']); ?></h2>
+                            <p class="product-desc"><?php echo e($row['description'] ?: 'Quality everyday product from AS Berkah.'); ?></p>
 
                             <div class="product-footer">
-                                <div class="product-price">Rp <?php echo number_format($row['price'], 0, ',', '.'); ?></div>
+                                <div class="product-price"><?php echo format_idr($row['price']); ?></div>
                                 <?php if ($inStock): ?>
-                                    <a href="?add_to_cart=<?php echo intval($row['id']); ?>" class="btn btn-primary btn-sm">Add to Cart</a>
+                                    <form method="POST" style="margin:0;">
+                                        <?php echo csrf_field(); ?>
+                                        <input type="hidden" name="add_to_cart" value="<?php echo intval($row['id']); ?>">
+                                        <button type="submit" class="btn btn-primary btn-sm">Add to Cart</button>
+                                    </form>
                                 <?php else: ?>
                                     <button type="button" class="btn btn-secondary btn-sm" disabled>Unavailable</button>
                                 <?php endif; ?>
@@ -245,7 +235,3 @@ foreach ($_SESSION['cart'] as $cItem) {
 </body>
 
 </html>
-
-<?php
-$conn->close();
-?>

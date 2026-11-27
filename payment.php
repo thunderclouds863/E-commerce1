@@ -1,35 +1,33 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('customer');
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'customer') {
-    header("Location: index.php");
-    exit;
+$conn = db();
+$user_id = intval($_SESSION['user_id']);
+$order_id = isset($_GET['order_id']) ? intval($_GET['order_id']) : intval($_SESSION['order_id'] ?? 0);
+
+$order = null;
+if ($order_id > 0) {
+    $stmt = $conn->prepare("SELECT * FROM orders WHERE id = ? AND user_id = ? LIMIT 1");
+    $stmt->bind_param("ii", $order_id, $user_id);
+    $stmt->execute();
+    $order = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 }
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
-
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-$has_pending = isset($_SESSION['order_id']) && isset($_SESSION['total_amount']);
+$has_pending = $order && in_array(strtolower($order['status']), ['awaiting payment', 'pending'], true);
 
 if ($has_pending) {
-    $order_id = $_SESSION['order_id'];
-    $total_amount = $_SESSION['total_amount'];
-
-    $random_code = rand(1000000000, 9999999999999);
-    $payment_amount = $total_amount + $random_code;
-
-    $sql = "UPDATE orders SET payment_code = ?, status = 'awaiting payment' WHERE id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ii", $random_code, $order_id);
-    $stmt->execute();
+    $total_amount = floatval($order['total_amount']);
+    $unique_code = intval($order['payment_code']);
+    if ($unique_code <= 0 || $unique_code > 999) {
+        $unique_code = random_int(100, 999);
+        $upd = $conn->prepare("UPDATE orders SET payment_code = ?, status = 'awaiting payment' WHERE id = ? AND user_id = ?");
+        $upd->bind_param("iii", $unique_code, $order_id, $user_id);
+        $upd->execute();
+        $upd->close();
+    }
+    $payment_amount = $total_amount + $unique_code;
 }
 ?>
 
@@ -63,9 +61,18 @@ if ($has_pending) {
                 </span>
             </a>
 
+            <button class="nav-toggle" type="button" data-nav-toggle aria-label="Toggle navigation" aria-expanded="false">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="3" y1="12" x2="21" y2="12"></line>
+                    <line x1="3" y1="6" x2="21" y2="6"></line>
+                    <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+            </button>
+
             <nav class="nav-links" data-nav-links aria-label="Customer navigation">
                 <a href="customer_dashboard.php">Catalog</a>
                 <a href="order-history.php">Orders</a>
+                <a href="account.php">Account</a>
                 <a href="logout.php" class="nav-logout">Logout</a>
             </nav>
         </div>
@@ -75,8 +82,8 @@ if ($has_pending) {
         <?php if (!$has_pending): ?>
             <div class="surface-card empty-state receipt-card">
                 <h3>No pending payment</h3>
-                <p>Proceed to checkout from your cart to generate a payment code.</p>
-                <a href="checkout.php" class="btn btn-primary">Go to Checkout</a>
+                <p>This order has already been paid or cannot be found.</p>
+                <a href="order-history.php" class="btn btn-primary">View Your Orders</a>
             </div>
         <?php else: ?>
             <section class="surface-card receipt-card">
@@ -91,23 +98,31 @@ if ($has_pending) {
                     </div>
                     <div class="summary-line">
                         <span>Order Subtotal</span>
-                        <span class="tabular-nums">Rp <?php echo number_format($total_amount, 0, ',', '.'); ?></span>
+                        <span class="tabular-nums"><?php echo format_idr($total_amount); ?></span>
+                    </div>
+                    <div class="summary-line">
+                        <span>Unique Transfer Code</span>
+                        <span class="tabular-nums">+ <?php echo format_idr($unique_code); ?></span>
                     </div>
 
                     <div class="payment-code-box">
                         <div>
-                            <div class="meta-tile-label" style="margin-bottom:2px;">Unique Payment Code</div>
-                            <div class="payment-code-value"><?php echo htmlspecialchars((string)$random_code); ?></div>
+                            <div class="meta-tile-label" style="margin-bottom:2px;">Verification Code</div>
+                            <div class="payment-code-value"><?php echo e((string)$unique_code); ?></div>
                         </div>
-                        <button type="button" class="btn btn-secondary btn-sm" data-copy-text="<?php echo htmlspecialchars((string)$random_code); ?>">Copy</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-copy-text="<?php echo e((string)$unique_code); ?>">Copy</button>
                     </div>
 
                     <div class="summary-total" style="margin-bottom:24px;">
-                        <span>Total to Pay</span>
-                        <span class="summary-total-amount">Rp <?php echo number_format($payment_amount, 0, ',', '.'); ?></span>
+                        <span>Exact Total to Pay</span>
+                        <span class="summary-total-amount"><?php echo format_idr($payment_amount); ?></span>
                     </div>
 
-                    <a href="confirm-payment.php?order_id=<?php echo intval($order_id); ?>" class="btn btn-primary btn-lg btn-block">I Have Completed Payment</a>
+                    <form method="POST" action="confirm-payment.php">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="order_id" value="<?php echo intval($order_id); ?>">
+                        <button type="submit" class="btn btn-primary btn-lg btn-block">I Have Completed Payment</button>
+                    </form>
                 </div>
             </section>
         <?php endif; ?>
@@ -124,7 +139,3 @@ if ($has_pending) {
 </body>
 
 </html>
-
-<?php
-$conn->close();
-?>

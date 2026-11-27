@@ -1,62 +1,39 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
-  header("Location: index.php");
-  exit();
-}
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('admin');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = db();
 
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
-
-// Handle Order Confirmation
-if (isset($_GET['confirm_order'])) {
-    $order_id = intval($_GET['confirm_order']);
-
-    $update_status = "UPDATE orders SET status = 'Dikonfirmasi' WHERE id = ?";
-    $stmt = $conn->prepare($update_status);
-    $stmt->bind_param("i", $order_id);
-    $stmt->execute();
-
-    $order_items = "SELECT product_id, quantity FROM order_items WHERE order_id = ?";
-    $stmt = $conn->prepare($order_items);
-    $stmt->bind_param("i", $order_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    while ($item = $result->fetch_assoc()) {
-        $product_id = $item['product_id'];
-        $quantity = $item['quantity'];
-
-        $update_stock = "UPDATE products SET stock = stock - ? WHERE id = ?";
-        $stmt = $conn->prepare($update_stock);
-        $stmt->bind_param("ii", $quantity, $product_id);
-        $stmt->execute();
+// Handle Order Confirmation (POST with CSRF; stock already deducted atomically at checkout)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['confirm_order'])) {
+    if (!verify_csrf()) {
+        set_flash('error', 'Invalid security token.');
+        header("Location: order-management.php");
+        exit();
     }
 
+    $order_id = intval($_POST['confirm_order']);
+    if ($order_id > 0) {
+        $stmt = $conn->prepare("UPDATE orders SET status = 'Dikonfirmasi' WHERE id = ? AND status IN ('Pending', 'paid')");
+        $stmt->bind_param("i", $order_id);
+        $stmt->execute();
+        if ($stmt->affected_rows > 0) {
+            set_flash('success', 'Order #' . $order_id . ' confirmed and sent to fulfillment.');
+        } else {
+            set_flash('error', 'Order #' . $order_id . ' is not in a confirmable state.');
+        }
+        $stmt->close();
+    }
     header("Location: order-management.php");
     exit();
 }
 
-$sql = "SELECT orders.id, orders.created_at, orders.total_amount, orders.status, users.username
+$sql = "SELECT orders.id, orders.created_at, orders.total_amount, orders.status, orders.payment_method, users.username
         FROM orders
         JOIN users ON orders.user_id = users.id
         ORDER BY orders.created_at DESC";
 $result = $conn->query($sql);
-
-function getOrderBadgeClass($status) {
-    $s = strtolower(trim($status));
-    if ($s === 'selesai' || $s === 'paid') return 'badge-success';
-    if ($s === 'pending' || $s === 'awaiting payment' || $s === 'dikemas') return 'badge-warning';
-    if ($s === 'dikonfirmasi' || $s === 'siap dikirim' || $s === 'dikirim' || $s === 'sampai tujuan') return 'badge-info';
-    return 'badge-neutral';
-}
+$flash = get_flash();
 ?>
 
 <!DOCTYPE html>
@@ -73,6 +50,12 @@ function getOrderBadgeClass($status) {
 </head>
 
 <body>
+  <?php if ($flash): ?>
+    <div class="toast-banner toast-banner--<?php echo e($flash['type']); ?>" data-toast role="status">
+      <?php echo e($flash['message']); ?>
+    </div>
+  <?php endif; ?>
+
   <header class="site-header">
     <div class="header-inner">
       <a href="admin_dashboard.php" class="brand-link">
@@ -113,7 +96,7 @@ function getOrderBadgeClass($status) {
       <div>
         <div class="page-eyebrow">Fulfillment</div>
         <h1 class="page-title">Order Management</h1>
-        <p class="page-subtitle">Review incoming customer orders and confirm pending transactions.</p>
+        <p class="page-subtitle">Review incoming customer orders and confirm pending or paid transactions for packing.</p>
       </div>
     </div>
 
@@ -137,20 +120,27 @@ function getOrderBadgeClass($status) {
               </tr>
             </thead>
             <tbody>
-              <?php while ($row = $result->fetch_assoc()): ?>
+              <?php while ($row = $result->fetch_assoc()):
+                $st = strtolower(trim($row['status']));
+                $canConfirm = ($st === 'pending' || $st === 'paid');
+              ?>
                 <tr>
                   <td><strong>#<?php echo intval($row['id']); ?></strong></td>
-                  <td><?php echo htmlspecialchars($row['username']); ?></td>
+                  <td><?php echo e($row['username']); ?></td>
                   <td class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($row['created_at'])); ?></td>
-                  <td class="text-right tabular-nums"><strong>Rp <?php echo number_format($row['total_amount'], 0, ',', '.'); ?></strong></td>
+                  <td class="text-right tabular-nums"><strong><?php echo format_idr($row['total_amount']); ?></strong></td>
                   <td>
-                    <span class="badge-pill <?php echo getOrderBadgeClass($row['status']); ?>">
-                      <?php echo htmlspecialchars(ucfirst($row['status'])); ?>
+                    <span class="badge-pill <?php echo status_badge_class($row['status']); ?>">
+                      <?php echo e(ucfirst($row['status'])); ?>
                     </span>
                   </td>
                   <td class="text-right">
-                    <?php if (strtolower($row['status']) === 'pending'): ?>
-                      <a href="order-management.php?confirm_order=<?php echo intval($row['id']); ?>" class="btn btn-success btn-sm">Confirm Order</a>
+                    <?php if ($canConfirm): ?>
+                      <form method="POST" style="margin:0;display:inline;">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="confirm_order" value="<?php echo intval($row['id']); ?>">
+                        <button type="submit" class="btn btn-success btn-sm">Confirm Order</button>
+                      </form>
                     <?php else: ?>
                       <span style="font-size:12.5px;color:var(--ink-muted);">—</span>
                     <?php endif; ?>
@@ -180,7 +170,3 @@ function getOrderBadgeClass($status) {
 </body>
 
 </html>
-
-<?php
-$conn->close();
-?>
