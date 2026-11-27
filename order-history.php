@@ -1,54 +1,34 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'customer') {
-    header("Location: index.php");
-    exit;
-}
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('customer');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = db();
+$user_id = intval($_SESSION['user_id']);
 
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-$user_id = $_SESSION['user_id'];
-
-if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['mark_completed'])) {
-    $order_id = $_POST['order_id'];
-    $update_query = "UPDATE orders SET status = 'Selesai' WHERE id = ?";
-    $update_stmt = $conn->prepare($update_query);
-    $update_stmt->bind_param("i", $order_id);
-    $update_stmt->execute();
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['mark_completed'])) {
+    if (!verify_csrf()) {
+        set_flash('error', 'Invalid security token.');
+    } else {
+        $order_id = intval($_POST['order_id'] ?? 0);
+        $update_stmt = $conn->prepare("UPDATE orders SET status = 'Selesai' WHERE id = ? AND user_id = ? AND status = 'Sampai Tujuan'");
+        $update_stmt->bind_param("ii", $order_id, $user_id);
+        $update_stmt->execute();
+        if ($update_stmt->affected_rows > 0) {
+            set_flash('success', 'Order #' . $order_id . ' marked as completed. Thank you!');
+        }
+        $update_stmt->close();
+    }
     header("Location: order-history.php");
-    exit;
+    exit();
 }
 
-$sql = "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC";
-$stmt = $conn->prepare($sql);
+$stmt = $conn->prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
 $orders_result = $stmt->get_result();
 
-function getStatusBadgeClass($status) {
-    $s = strtolower(trim($status));
-    if ($s === 'selesai' || $s === 'paid') return 'badge-success';
-    if ($s === 'pending' || $s === 'awaiting payment' || $s === 'dikemas') return 'badge-warning';
-    if ($s === 'dikonfirmasi' || $s === 'siap dikirim' || $s === 'dikirim' || $s === 'sampai tujuan') return 'badge-info';
-    return 'badge-neutral';
-}
-
-$cart_count = 0;
-if (!empty($_SESSION['cart'])) {
-    foreach ($_SESSION['cart'] as $cItem) {
-        if (is_array($cItem) && isset($cItem['quantity'])) {
-            $cart_count += intval($cItem['quantity']);
-        }
-    }
-}
+$cart_count = cart_total_units();
+$flash = get_flash();
 ?>
 
 <!DOCTYPE html>
@@ -65,6 +45,12 @@ if (!empty($_SESSION['cart'])) {
 </head>
 
 <body>
+    <?php if ($flash): ?>
+        <div class="toast-banner toast-banner--<?php echo e($flash['type']); ?>" data-toast role="status">
+            <?php echo e($flash['message']); ?>
+        </div>
+    <?php endif; ?>
+
     <header class="site-header">
         <div class="header-inner">
             <a href="customer_dashboard.php" class="brand-link">
@@ -98,6 +84,7 @@ if (!empty($_SESSION['cart'])) {
                     <?php endif; ?>
                 </a>
                 <a href="order-history.php" class="active">Orders</a>
+                <a href="account.php">Account</a>
                 <a href="logout.php" class="nav-logout">Logout</a>
             </nav>
         </div>
@@ -108,7 +95,7 @@ if (!empty($_SESSION['cart'])) {
             <div>
                 <div class="page-eyebrow">Purchases</div>
                 <h1 class="page-title">Order History</h1>
-                <p class="page-subtitle">Track active deliveries and review your completed orders.</p>
+                <p class="page-subtitle">Track active deliveries, finish pending payments, and review past orders.</p>
             </div>
             <a href="customer_dashboard.php" class="btn btn-primary">Shop Again</a>
         </div>
@@ -131,16 +118,20 @@ if (!empty($_SESSION['cart'])) {
                                 <tr>
                                     <td><strong>#<?php echo intval($order['id']); ?></strong></td>
                                     <td class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($order['created_at'])); ?></td>
-                                    <td class="tabular-nums"><strong>Rp <?php echo number_format($order['total_amount'], 0, ',', '.'); ?></strong></td>
+                                    <td class="tabular-nums"><strong><?php echo format_idr($order['total_amount']); ?></strong></td>
                                     <td>
-                                        <span class="badge-pill <?php echo getStatusBadgeClass($order['status']); ?>">
-                                            <?php echo htmlspecialchars(ucfirst($order['status'])); ?>
+                                        <span class="badge-pill <?php echo status_badge_class($order['status']); ?>">
+                                            <?php echo e(ucfirst($order['status'])); ?>
                                         </span>
                                     </td>
                                     <td class="text-right">
                                         <div class="action-group" style="justify-content:flex-end;">
-                                            <?php if ($order['status'] == 'Sampai Tujuan'): ?>
+                                            <?php if (strtolower($order['status']) === 'awaiting payment'): ?>
+                                                <a href="payment.php?order_id=<?php echo intval($order['id']); ?>" class="btn btn-primary btn-sm">Pay Now</a>
+                                            <?php endif; ?>
+                                            <?php if ($order['status'] === 'Sampai Tujuan'): ?>
                                                 <form method="POST" style="margin:0;">
+                                                    <?php echo csrf_field(); ?>
                                                     <input type="hidden" name="order_id" value="<?php echo intval($order['id']); ?>">
                                                     <button type="submit" name="mark_completed" class="btn btn-success btn-sm">Mark Completed</button>
                                                 </form>
@@ -174,7 +165,3 @@ if (!empty($_SESSION['cart'])) {
 </body>
 
 </html>
-
-<?php
-$conn->close();
-?>

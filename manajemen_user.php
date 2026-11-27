@@ -1,52 +1,39 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
-  header("Location: index.php");
-  exit();
-}
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('admin');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
+$conn = db();
 
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
-
-// Handle POST Requests for approving, rejecting, and deleting users
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  if (!verify_csrf()) {
+    set_flash('error', 'Invalid security token.');
+    header("Location: manajemen_user.php");
+    exit();
+  }
   if (isset($_POST['action']) && isset($_POST['user_id'])) {
-    $user_id = $_POST['user_id'];
+    $user_id = intval($_POST['user_id']);
     $action = $_POST['action'];
 
     $valid_actions = ['approve_user', 'reject_user', 'delete_user'];
-    if (in_array($action, $valid_actions)) {
-      switch ($action) {
-        case 'approve_user':
-          $sql = "UPDATE users SET status = ? WHERE id = ?";
-          $stmt = $conn->prepare($sql);
-          $status = 'actived';
-          $stmt->bind_param("si", $status, $user_id);
-          $stmt->execute();
-          break;
-
-        case 'reject_user':
-          $sql = "UPDATE users SET status = ? WHERE id = ?";
-          $stmt = $conn->prepare($sql);
-          $status = 'rejected';
-          $stmt->bind_param("si", $status, $user_id);
-          $stmt->execute();
-          break;
-
-        case 'delete_user':
-          $sql = "DELETE FROM users WHERE id = ?";
-          $stmt = $conn->prepare($sql);
-          $stmt->bind_param("i", $user_id);
-          $stmt->execute();
-          break;
+    if (in_array($action, $valid_actions, true)) {
+      if ($action === 'approve_user') {
+        $stmt = $conn->prepare("UPDATE users SET status = 'actived' WHERE id = ?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $stmt->close();
+        set_flash('success', 'User account approved.');
+      } elseif ($action === 'reject_user') {
+        $stmt = $conn->prepare("UPDATE users SET status = 'rejected' WHERE id = ?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $stmt->close();
+        set_flash('success', 'User account rejected.');
+      } elseif ($action === 'delete_user') {
+        $stmt = $conn->prepare("DELETE FROM users WHERE id = ?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $stmt->close();
+        set_flash('success', 'User deleted.');
       }
       header("Location: manajemen_user.php");
       exit();
@@ -54,10 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
   }
 }
 
-$pending_users = $conn->query("SELECT * FROM users WHERE status = 'pending'");
-$customers = $conn->query("SELECT * FROM users WHERE role = 'customer' AND status = 'actived'");
-$employees = $conn->query("SELECT * FROM users WHERE role = 'employee' AND status = 'actived'");
-$couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status = 'actived'");
+$pending_users = $conn->query("SELECT * FROM users WHERE status = 'pending' ORDER BY id DESC");
+$customers = $conn->query("SELECT * FROM users WHERE role = 'customer' AND status = 'actived' ORDER BY id ASC");
+$employees = $conn->query("SELECT * FROM users WHERE role = 'employee' AND status = 'actived' ORDER BY id ASC");
+$couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status = 'actived' ORDER BY id ASC");
+$flash = get_flash();
 ?>
 
 <!DOCTYPE html>
@@ -74,6 +62,12 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
 </head>
 
 <body>
+  <?php if ($flash): ?>
+    <div class="toast-banner toast-banner--<?php echo e($flash['type']); ?>" data-toast role="status">
+      <?php echo e($flash['message']); ?>
+    </div>
+  <?php endif; ?>
+
   <header class="site-header">
     <div class="header-inner">
       <a href="admin_dashboard.php" class="brand-link">
@@ -119,7 +113,6 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
     </div>
 
     <div class="stack-lg">
-      <!-- Pending Approvals -->
       <section class="surface-card">
         <div class="surface-card-header">
           <h2 class="surface-card-title">Pending Users</h2>
@@ -141,15 +134,17 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
                 <?php while ($user = $pending_users->fetch_assoc()): ?>
                   <tr>
                     <td class="tabular-nums">#<?php echo intval($user['id']); ?></td>
-                    <td><strong><?php echo htmlspecialchars($user['username']); ?></strong></td>
-                    <td><span class="badge-pill badge-neutral"><?php echo htmlspecialchars(ucfirst($user['role'])); ?></span></td>
+                    <td><strong><?php echo e($user['username']); ?></strong></td>
+                    <td><span class="badge-pill badge-neutral"><?php echo e(ucfirst($user['role'])); ?></span></td>
                     <td class="text-right">
                       <div class="action-group" style="justify-content:flex-end;">
                         <form method="POST" style="margin:0;">
+                          <?php echo csrf_field(); ?>
                           <input type="hidden" name="user_id" value="<?php echo intval($user['id']); ?>">
                           <button type="submit" name="action" value="approve_user" class="btn btn-success btn-sm">Approve</button>
                         </form>
                         <form method="POST" style="margin:0;">
+                          <?php echo csrf_field(); ?>
                           <input type="hidden" name="user_id" value="<?php echo intval($user['id']); ?>">
                           <button type="submit" name="action" value="reject_user" class="btn btn-danger btn-sm">Reject</button>
                         </form>
@@ -168,7 +163,6 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
         <?php endif; ?>
       </section>
 
-      <!-- Active Users by Role -->
       <div class="users-grid">
         <section class="surface-card">
           <div class="surface-card-header">
@@ -177,18 +171,13 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
           </div>
           <div class="table-wrap">
             <table class="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Username</th>
-                </tr>
-              </thead>
+              <thead><tr><th>ID</th><th>Username</th></tr></thead>
               <tbody>
                 <?php if ($customers->num_rows > 0): ?>
                   <?php while ($customer = $customers->fetch_assoc()): ?>
                     <tr>
                       <td class="tabular-nums">#<?php echo intval($customer['id']); ?></td>
-                      <td><strong><?php echo htmlspecialchars($customer['username']); ?></strong></td>
+                      <td><strong><?php echo e($customer['username']); ?></strong></td>
                     </tr>
                   <?php endwhile; ?>
                 <?php else: ?>
@@ -206,18 +195,13 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
           </div>
           <div class="table-wrap">
             <table class="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Username</th>
-                </tr>
-              </thead>
+              <thead><tr><th>ID</th><th>Username</th></tr></thead>
               <tbody>
                 <?php if ($employees->num_rows > 0): ?>
                   <?php while ($employee = $employees->fetch_assoc()): ?>
                     <tr>
                       <td class="tabular-nums">#<?php echo intval($employee['id']); ?></td>
-                      <td><strong><?php echo htmlspecialchars($employee['username']); ?></strong></td>
+                      <td><strong><?php echo e($employee['username']); ?></strong></td>
                     </tr>
                   <?php endwhile; ?>
                 <?php else: ?>
@@ -235,18 +219,13 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
           </div>
           <div class="table-wrap">
             <table class="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Username</th>
-                </tr>
-              </thead>
+              <thead><tr><th>ID</th><th>Username</th></tr></thead>
               <tbody>
                 <?php if ($couriers->num_rows > 0): ?>
                   <?php while ($courier = $couriers->fetch_assoc()): ?>
                     <tr>
                       <td class="tabular-nums">#<?php echo intval($courier['id']); ?></td>
-                      <td><strong><?php echo htmlspecialchars($courier['username']); ?></strong></td>
+                      <td><strong><?php echo e($courier['username']); ?></strong></td>
                     </tr>
                   <?php endwhile; ?>
                 <?php else: ?>
@@ -271,5 +250,3 @@ $couriers = $conn->query("SELECT * FROM users WHERE role = 'courier' AND status 
 </body>
 
 </html>
-
-<?php $conn->close(); ?>

@@ -1,16 +1,14 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('customer');
 
 if (isset($_GET['id'])) {
-    $product_id = $_GET['id'];
-
-    // Remove the product from the cart
-    if (($key = array_search($product_id, $_SESSION['cart'])) !== false) {
-        unset($_SESSION['cart'][$key]);
+    $product_id = intval($_GET['id']);
+    if (isset($_SESSION['cart'][$product_id])) {
+        unset($_SESSION['cart'][$product_id]);
+        set_flash('success', 'Item removed from your cart.');
     }
-
-    // Redirect back to the shopping cart page
-    header("Location: shopping-cart.php");
-    exit;
 }
-?>
+
+header("Location: shopping-cart.php");
+exit();

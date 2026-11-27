@@ -1,20 +1,8 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
-    header("Location: index.php");
-    exit;
-}
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('admin');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
+$conn = db();
 $sql = "SELECT * FROM orders WHERE status = 'Selesai' ORDER BY created_at DESC";
 $result = $conn->query($sql);
 
@@ -105,7 +93,7 @@ if ($result && $result->num_rows > 0) {
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
                     </span>
                 </div>
-                <div class="kpi-value">Rp <?php echo number_format($total_sales, 0, ',', '.'); ?></div>
+                <div class="kpi-value"><?php echo format_idr($total_sales); ?></div>
                 <div class="kpi-meta">Gross sales from completed orders</div>
             </div>
         </section>
@@ -132,7 +120,7 @@ if ($result && $result->num_rows > 0) {
                                 <tr>
                                     <td><strong>#<?php echo intval($order['id']); ?></strong></td>
                                     <td class="tabular-nums"><?php echo date("d M Y, H:i", strtotime($order['created_at'])); ?></td>
-                                    <td class="text-right tabular-nums"><strong>Rp <?php echo number_format($order['total_amount'], 0, ',', '.'); ?></strong></td>
+                                    <td class="text-right tabular-nums"><strong><?php echo format_idr($order['total_amount']); ?></strong></td>
                                     <td class="text-right">
                                         <button type="button" class="btn btn-secondary btn-sm view-details" data-order-id="<?php echo intval($order['id']); ?>">View Details</button>
                                     </td>
@@ -231,7 +219,10 @@ if ($result && $result->num_rows > 0) {
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: formData.toString()
                     })
-                    .then(function (r) { return r.json(); })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
                     .then(function (data) {
                         document.getElementById('customerInfo').textContent = data.customer_name || '—';
                         document.getElementById('shippingAddress').textContent = data.shipping_address || 'Not specified';
@@ -240,10 +231,22 @@ if ($result && $result->num_rows > 0) {
                         tbody.innerHTML = '';
                         (data.order_items || []).forEach(function (item) {
                             const tr = document.createElement('tr');
-                            tr.innerHTML =
-                                '<td><strong>' + item.product_name + '</strong></td>' +
-                                '<td class="text-center tabular-nums">' + item.quantity + '</td>' +
-                                '<td class="text-right tabular-nums">Rp ' + Number(item.price).toLocaleString('id-ID') + '</td>';
+                            const tdName = document.createElement('td');
+                            const strong = document.createElement('strong');
+                            strong.textContent = item.product_name;
+                            tdName.appendChild(strong);
+
+                            const tdQty = document.createElement('td');
+                            tdQty.className = 'text-center tabular-nums';
+                            tdQty.textContent = item.quantity;
+
+                            const tdPrice = document.createElement('td');
+                            tdPrice.className = 'text-right tabular-nums';
+                            tdPrice.textContent = 'Rp ' + Number(item.price).toLocaleString('id-ID');
+
+                            tr.appendChild(tdName);
+                            tr.appendChild(tdQty);
+                            tr.appendChild(tdPrice);
                             tbody.appendChild(tr);
                         });
                         modal.classList.add('active');
@@ -258,5 +261,3 @@ if ($result && $result->num_rows > 0) {
 </body>
 
 </html>
-
-<?php $conn->close(); ?>

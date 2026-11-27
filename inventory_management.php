@@ -1,109 +1,135 @@
 <?php
-session_start();
-if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') {
-  header("Location: index.php");
-  exit();
-}
+require_once __DIR__ . '/includes/bootstrap.php';
+require_role('admin');
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "ecommerce_db";
+$conn = db();
 
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
-
-// Function for uploading images
-function uploadImage($image)
+function uploadProductImage(array $image): array
 {
     $targetDir = "uploads/";
-    $imageFileType = strtolower(pathinfo($image["name"], PATHINFO_EXTENSION));
-    $allowedTypes = ["jpg", "jpeg", "png"];
-
-    if (!in_array($imageFileType, $allowedTypes)) {
-        return "error_type";
+    if (!is_dir($targetDir)) {
+        mkdir($targetDir, 0755, true);
     }
 
-    if ($image["size"] > 2 * 1024 * 1024) {
-        return "error_size";
+    $ext = strtolower(pathinfo($image["name"] ?? '', PATHINFO_EXTENSION));
+    $allowedTypes = ["jpg", "jpeg", "png", "webp"];
+    if (!in_array($ext, $allowedTypes, true)) {
+        return ['error' => 'Only JPG, PNG, and WEBP images are allowed.'];
+    }
+
+    if (($image["size"] ?? 0) > 2 * 1024 * 1024) {
+        return ['error' => 'Image size must not exceed 2 MB.'];
+    }
+
+    if (empty($image["tmp_name"]) || @getimagesize($image["tmp_name"]) === false) {
+        return ['error' => 'Uploaded file is not a valid image.'];
     }
 
     $i = 1;
-    $targetFile = $targetDir . "produk" . $i . "." . $imageFileType;
-
+    $targetFile = $targetDir . "produk" . $i . "." . $ext;
     while (file_exists($targetFile)) {
         $i++;
-        $targetFile = $targetDir . "produk" . $i . "." . $imageFileType;
+        $targetFile = $targetDir . "produk" . $i . "." . $ext;
     }
 
     if (move_uploaded_file($image["tmp_name"], $targetFile)) {
-        return $targetFile;
+        return ['path' => $targetFile];
     }
 
-    return "error_upload";
+    return ['error' => 'Failed to save uploaded image.'];
 }
 
-// Handle POST requests
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  if (isset($_POST['action'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if (!verify_csrf()) {
+        set_flash('error', 'Invalid security token.');
+        header("Location: inventory_management.php");
+        exit();
+    }
+
     $action = $_POST['action'];
 
     if ($action === 'add_product') {
-      $name = $_POST['name'];
-      $description = $_POST['description'];
-      $price = $_POST['price'];
-      $stock = $_POST['stock'];
+        $name = trim($_POST['name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        $price = floatval($_POST['price'] ?? 0);
+        $stock = intval($_POST['stock'] ?? 0);
 
-      $image = null;
-      if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
-        $image = uploadImage($_FILES['image']);
-      }
+        if ($name === '' || $price < 0 || $stock < 0) {
+            set_flash('error', 'Please enter a valid product name, non-negative price, and non-negative stock.');
+            header("Location: inventory_management.php");
+            exit();
+        }
 
-      $sql = "INSERT INTO products (name, description, price, stock, image) VALUES (?, ?, ?, ?, ?)";
-      $stmt = $conn->prepare($sql);
-      $stmt->bind_param("ssdss", $name, $description, $price, $stock, $image);
-      $stmt->execute();
-      header("Location: inventory_management.php");
-      exit();
+        $imagePath = null;
+        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+            $upload = uploadProductImage($_FILES['image']);
+            if (isset($upload['error'])) {
+                set_flash('error', $upload['error']);
+                header("Location: inventory_management.php");
+                exit();
+            }
+            $imagePath = $upload['path'];
+        }
+
+        $stmt = $conn->prepare("INSERT INTO products (name, description, price, stock, image) VALUES (?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssdis", $name, $description, $price, $stock, $imagePath);
+        $stmt->execute();
+        $stmt->close();
+        set_flash('success', 'Product "' . $name . '" added.');
+        header("Location: inventory_management.php");
+        exit();
     }
 
     if ($action === 'edit_product') {
-      $id = $_POST['id'];
-      $name = $_POST['name'];
-      $description = $_POST['description'];
-      $price = $_POST['price'];
-      $stock = $_POST['stock'];
-      $existingImage = $_POST['existing_image'];
+        $id = intval($_POST['id'] ?? 0);
+        $name = trim($_POST['name'] ?? '');
+        $description = trim($_POST['description'] ?? '');
+        $price = floatval($_POST['price'] ?? 0);
+        $stock = intval($_POST['stock'] ?? 0);
+        $existingImage = trim($_POST['existing_image'] ?? '');
 
-      $image = $existingImage;
-      if (isset($_FILES['image']) && $_FILES['image']['error'] == 0) {
-        $image = uploadImage($_FILES['image']);
-      }
+        if ($id <= 0 || $name === '' || $price < 0 || $stock < 0) {
+            set_flash('error', 'Invalid product fields.');
+            header("Location: inventory_management.php");
+            exit();
+        }
 
-      $sql = "UPDATE products SET name = ?, description = ?, price = ?, stock = ?, image = ? WHERE id = ?";
-      $stmt = $conn->prepare($sql);
-      $stmt->bind_param("ssdssi", $name, $description, $price, $stock, $image, $id);
-      $stmt->execute();
-      header("Location: inventory_management.php");
-      exit();
+        $imagePath = $existingImage !== '' ? $existingImage : null;
+        if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+            $upload = uploadProductImage($_FILES['image']);
+            if (isset($upload['error'])) {
+                set_flash('error', $upload['error']);
+                header("Location: inventory_management.php");
+                exit();
+            }
+            $imagePath = $upload['path'];
+        }
+
+        $stmt = $conn->prepare("UPDATE products SET name = ?, description = ?, price = ?, stock = ?, image = ? WHERE id = ?");
+        $stmt->bind_param("ssdisi", $name, $description, $price, $stock, $imagePath, $id);
+        $stmt->execute();
+        $stmt->close();
+        set_flash('success', 'Product "' . $name . '" updated.');
+        header("Location: inventory_management.php");
+        exit();
     }
 
     if ($action === 'delete_product') {
-      $id = $_POST['id'];
-      $sql = "DELETE FROM products WHERE id = ?";
-      $stmt = $conn->prepare($sql);
-      $stmt->bind_param("i", $id);
-      $stmt->execute();
-      header("Location: inventory_management.php");
-      exit();
+        $id = intval($_POST['id'] ?? 0);
+        if ($id > 0) {
+            $stmt = $conn->prepare("DELETE FROM products WHERE id = ?");
+            $stmt->bind_param("i", $id);
+            $stmt->execute();
+            $stmt->close();
+            set_flash('success', 'Product deleted.');
+        }
+        header("Location: inventory_management.php");
+        exit();
     }
-  }
 }
 
-$products = $conn->query("SELECT * FROM products");
+$products = $conn->query("SELECT * FROM products ORDER BY id ASC");
+$flash = get_flash();
 ?>
 
 <!DOCTYPE html>
@@ -120,6 +146,12 @@ $products = $conn->query("SELECT * FROM products");
 </head>
 
 <body>
+  <?php if ($flash): ?>
+    <div class="toast-banner toast-banner--<?php echo e($flash['type']); ?>" data-toast role="status">
+      <?php echo e($flash['message']); ?>
+    </div>
+  <?php endif; ?>
+
   <header class="site-header">
     <div class="header-inner">
       <a href="admin_dashboard.php" class="brand-link">
@@ -192,18 +224,18 @@ $products = $conn->query("SELECT * FROM products");
                   <td>
                     <div style="display:flex;align-items:center;gap:12px;">
                       <?php if (!empty($product['image']) && file_exists($product['image'])): ?>
-                        <img class="table-thumb" src="<?php echo htmlspecialchars($product['image']); ?>" alt="<?php echo htmlspecialchars($product['name']); ?>">
+                        <img class="table-thumb" src="<?php echo e($product['image']); ?>" alt="<?php echo e($product['name']); ?>">
                       <?php else: ?>
                         <div class="table-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:11px;">No img</div>
                       <?php endif; ?>
                       <div>
-                        <strong><?php echo htmlspecialchars($product['name']); ?></strong>
+                        <strong><?php echo e($product['name']); ?></strong>
                         <div style="font-size:12px;color:var(--ink-muted);">ID #<?php echo intval($product['id']); ?></div>
                       </div>
                     </div>
                   </td>
-                  <td style="max-width:300px;color:var(--ink-secondary);"><?php echo htmlspecialchars($product['description']); ?></td>
-                  <td class="text-right tabular-nums"><strong>Rp <?php echo number_format($product['price'], 0, ',', '.'); ?></strong></td>
+                  <td style="max-width:300px;color:var(--ink-secondary);"><?php echo e($product['description']); ?></td>
+                  <td class="text-right tabular-nums"><strong><?php echo format_idr($product['price']); ?></strong></td>
                   <td class="text-center">
                     <span class="badge-pill <?php echo $stockCls; ?>"><?php echo $stock; ?></span>
                   </td>
@@ -211,6 +243,7 @@ $products = $conn->query("SELECT * FROM products");
                     <div class="action-group" style="justify-content:flex-end;">
                       <button type="button" class="btn btn-secondary btn-sm" onclick='editProduct(<?php echo htmlspecialchars(json_encode($product), ENT_QUOTES, "UTF-8"); ?>)'>Edit</button>
                       <form method="POST" style="margin:0;" onsubmit="return confirm('Delete this product?');">
+                        <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="delete_product">
                         <input type="hidden" name="id" value="<?php echo intval($product['id']); ?>">
                         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
@@ -241,6 +274,7 @@ $products = $conn->query("SELECT * FROM products");
       </div>
       <div class="ui-modal-body">
         <form method="POST" enctype="multipart/form-data">
+          <?php echo csrf_field(); ?>
           <input type="hidden" name="action" value="add_product">
           <div class="form-group">
             <label class="form-label" for="add-name">Product Name</label>
@@ -253,16 +287,16 @@ $products = $conn->query("SELECT * FROM products");
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="form-group">
               <label class="form-label" for="add-price">Price (Rp)</label>
-              <input class="form-control" type="number" id="add-price" name="price" step="0.01" required>
+              <input class="form-control" type="number" id="add-price" name="price" min="0" step="0.01" required>
             </div>
             <div class="form-group">
               <label class="form-label" for="add-stock">Stock</label>
-              <input class="form-control" type="number" id="add-stock" name="stock" required>
+              <input class="form-control" type="number" id="add-stock" name="stock" min="0" required>
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label" for="add-image">Product Image</label>
-            <input class="form-control" type="file" id="add-image" name="image" accept="image/*">
+            <label class="form-label" for="add-image">Product Image (JPG/PNG/WEBP, max 2MB)</label>
+            <input class="form-control" type="file" id="add-image" name="image" accept="image/jpeg,image/png,image/webp">
           </div>
           <div class="ui-modal-footer">
             <button type="button" class="btn btn-secondary" onclick="togglePopup('add')">Cancel</button>
@@ -282,6 +316,7 @@ $products = $conn->query("SELECT * FROM products");
       </div>
       <div class="ui-modal-body">
         <form method="POST" enctype="multipart/form-data">
+          <?php echo csrf_field(); ?>
           <input type="hidden" name="action" value="edit_product">
           <input type="hidden" name="id" id="edit-id">
           <input type="hidden" name="existing_image" id="edit-existing-image">
@@ -296,16 +331,16 @@ $products = $conn->query("SELECT * FROM products");
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
             <div class="form-group">
               <label class="form-label" for="edit-price">Price (Rp)</label>
-              <input class="form-control" type="number" name="price" id="edit-price" step="0.01" required>
+              <input class="form-control" type="number" name="price" id="edit-price" min="0" step="0.01" required>
             </div>
             <div class="form-group">
               <label class="form-label" for="edit-stock">Stock</label>
-              <input class="form-control" type="number" name="stock" id="edit-stock" required>
+              <input class="form-control" type="number" name="stock" id="edit-stock" min="0" required>
             </div>
           </div>
           <div class="form-group">
             <label class="form-label" for="edit-image">Replace Image (optional)</label>
-            <input class="form-control" type="file" id="edit-image" name="image" accept="image/*">
+            <input class="form-control" type="file" id="edit-image" name="image" accept="image/jpeg,image/png,image/webp">
           </div>
           <div class="ui-modal-footer">
             <button type="button" class="btn btn-secondary" onclick="togglePopup('edit')">Cancel</button>
@@ -345,5 +380,3 @@ $products = $conn->query("SELECT * FROM products");
 </body>
 
 </html>
-
-<?php $conn->close(); ?>
