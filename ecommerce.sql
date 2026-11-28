@@ -36,7 +36,7 @@ CREATE TABLE orders (
     address TEXT NOT NULL,
     payment_code BIGINT,
     payment_method ENUM('bank_transfer', 'credit_card', 'cash_on_delivery') NOT NULL,
-    status ENUM('Pending', 'awaiting payment', 'paid', 'Dikonfirmasi', 'Dikemas', 'Siap Dikirim', 'Dikirim', 'Sampai Tujuan', 'Selesai') DEFAULT 'pending',
+    status ENUM('Pending', 'awaiting payment', 'paid', 'Dikonfirmasi', 'Dikemas', 'Siap Dikirim', 'Dikirim', 'Sampai Tujuan', 'Selesai') DEFAULT 'Pending',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
