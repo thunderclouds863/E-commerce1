@@ -20,7 +20,7 @@ function db(): mysqli {
     $pass = getenv('DB_PASS') !== false ? getenv('DB_PASS') : '';
     $name = getenv('DB_NAME') ?: 'ecommerce_db';
 
-    $conn = new mysqli($host, $user, $pass, $name);
+    $conn = demo_mysqli($host, $user, $pass, $name);
     if ($conn->connect_error) {
         http_response_code(500);
         die("Database connection failed.");

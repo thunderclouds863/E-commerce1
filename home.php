@@ -14,7 +14,7 @@ $password = "";
 $dbname = "peminjaman_alat";
 
 // Buat koneksi
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = demo_mysqli($servername, $username, $password, $dbname);
 
 // Periksa koneksi
 if ($conn->connect_error) {
