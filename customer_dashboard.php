@@ -153,7 +153,7 @@ $cart_count = cart_total_units();
             <div class="product-grid" data-product-grid>
                 <?php foreach ($products as $idx => $row):
                     $imgSrc = '';
-                    if (!empty($row['image']) && is_string($row['image']) && file_exists($row['image'])) {
+                    if (!empty($row['image']) && is_string($row['image']) && (preg_match('#^https?://#i', $row['image']) || file_exists($row['image']))) {
                         $imgSrc = $row['image'];
                     } elseif (file_exists('uploads/produk' . $row['id'] . '.png')) {
                         $imgSrc = 'uploads/produk' . $row['id'] . '.png';

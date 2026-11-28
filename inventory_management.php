@@ -32,6 +32,14 @@ function uploadProductImage(array $image): array
         $targetFile = $targetDir . "produk" . $i . "." . $ext;
     }
 
+    if (function_exists('demo_upload_store')) {
+        $stored = demo_upload_store($image["tmp_name"], $targetFile, 'ecommerce1/products/' . basename($targetFile), $targetFile);
+        if ($stored !== null) {
+            return ['path' => $stored];
+        }
+        return ['error' => 'Failed to save uploaded image.'];
+    }
+
     if (move_uploaded_file($image["tmp_name"], $targetFile)) {
         return ['path' => $targetFile];
     }
@@ -223,7 +231,7 @@ $flash = get_flash();
                 <tr>
                   <td data-primary="true">
                     <div style="display:flex;align-items:center;gap:12px;">
-                      <?php if (!empty($product['image']) && file_exists($product['image'])): ?>
+                      <?php if (!empty($product['image']) && (preg_match('#^https?://#i', (string)$product['image']) || file_exists($product['image']))): ?>
                         <img class="table-thumb" src="<?php echo e($product['image']); ?>" alt="<?php echo e($product['name']); ?>">
                       <?php else: ?>
                         <div class="table-thumb" style="display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:11px;">No img</div>

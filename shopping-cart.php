@@ -89,7 +89,7 @@ foreach ($_SESSION['cart'] as $product_id => $item) {
         $total_units += $qty;
 
         $imgSrc = '';
-        if (!empty($product['image']) && is_string($product['image']) && file_exists($product['image'])) {
+        if (!empty($product['image']) && is_string($product['image']) && (preg_match('#^https?://#i', $product['image']) || file_exists($product['image']))) {
             $imgSrc = $product['image'];
         } elseif (file_exists('uploads/produk' . $product['id'] . '.png')) {
             $imgSrc = 'uploads/produk' . $product['id'] . '.png';

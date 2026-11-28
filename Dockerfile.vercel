@@ -12,4 +12,5 @@ WORKDIR /var/www/html
 COPY . .
 RUN if [ -f composer.json ] && [ ! -d vendor ]; then composer install --no-dev --no-interaction --no-progress; fi \
  && chown -R www-data:www-data /var/www/html
+RUN printf '<Directory "/var/www/html/deploy">\n  Require all denied\n</Directory>\nCGIPassAuth On\n' > /etc/apache2/conf-enabled/zz-deny-deploy.conf
 CMD ["bash", "deploy/start-vercel.sh"]
